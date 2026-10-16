@@ -1,0 +1,51 @@
+﻿id,nombre,correo,ciudad,telefono
+101,  Camila Torres  ,camila.torres@example.com,Bogotá,3105550101
+102,Camila Torrez,camila.torrez@example.com,Bogota,3105550101
+103,Juan Pérez,juan.perez@example.com,Medellín,
+104,JUAN PEREZ,juan.perez@example.com,Medellin,3005550202
+105,María Gómez,maria.gomez@example.com,Cali,3155550303
+106,Maria Gomez,maria.gomez@example.com,Cali,3155550303
+107,Laura Ríos,laura.rios@example.com,Bogotá,3205550404
+108,Andrés  Silva,andres.silva@example.com,Bogota,3005550505
+109,Paula Méndez,,Zipaquirá,3125550606
+110,Pedro Ramírez,pedro.ramirez@example.com,Chía,3145550707
+111,Camilo Rojas,camilo.rojas@example.com,Cajicá,3115550808
+112,Daniela Castro,daniela.castro@example.com,soacha,3135550909
+113,Valentina Cruz,valentina.cruz@example.com,Zipaquira,3015551010
+114,Santiago López,santiago.lopez@example.com,Chía,3165551111
+115,Elena Vargas,elena.vargas@example.com,  Bogotá  ,3205551212
+116,Mateo Suárez,mateo.suarez@example.com,,3025551313
+117,Nicolás Herrera,nicolas.herrera@example.com,Tunja,3035551414
+118,nicolas herera,nicolas.herrera@example.com,Tunja,3035551414
+119,Carlos Rojas,carlos.rojas.119@example.com,Bogotá,3045551515
+120,Carlos Rojaz,carlos.rojaz.120@example.com,Pasto,3055551616
+121,Ana Lucía Díaz,ANA.DIAZ@EXAMPLE.COM,Bucaramanga,3065551717
+122,Felipe Acosta,felipe.acosta@example.com,Villavicencio,
+123,Natalia Pardo,natalia.pardo@example.com,Ibagué,3075551818
+124,  Sebastián Vega,sebastian.vega@example.com,Manizales,3085551919
+125,Gabriela Peña,,Pereira,3095552020
+126,Daniela Moreno,daniela.moreno@example.com,Cali,3105552121
+127,Daniela  Morneo,daniela.moreno@example.com,Cali,3105552121
+128,,cliente.128@example.com,Chía,3115552222
+129,Ricardo Ospina,ricardo.ospina@example.com,Duitama,3125552323
+130,Isabella León,isabella.leon@example.com,ZIPAQUIRÁ,3135552424
+131,Óscar Molina,oscar.molina@example.com,Armenia,
+132,Manuela Ortiz,manuela.ortiz@example.com,Neiva,3145552525
+133,Tomás Salazar,,Facatativá,3155552626
+134,aLeJaNdRa Nieto,alejandra.nieto@example.com,Mosquera,3165552727
+135,Juliana Cárdenas,juliana.cardenas@example.com,Cajicá,3175552828
+136,Esteban Arias,esteban.arias@example.com,,3185552929
+137,Juliana Cardenaz,juliana.cardenas@example.com,Cajicá,3175552828
+138,David   Restrepo,david.restrepo@example.com,Rionegro,3195553030
+139,Luciana Beltrán,luciana.beltran@example.com,Fusagasugá,3205553131
+140,Miguel Santos,,Girardot,
+141,Sara Lozano  ,sara.lozano@example.com,Sopó,3215553232
+142,Julián Fajardo,julian.fajardo@example.com,Tabio,3225553333
+143,Mariana Quintero,mariana.quintero@example.com,Tenjo,3235553434
+144,Diego Castaño,diego.castano@example.com,,3245553535
+145,Victoria Bernal,victoria.bernal@example.com,Tocancipá,3255553636
+105,María Gómez,maria.gomez@example.com,Cali,3155550303
+110,Pedro Ramírez,pedro.ramirez@example.com,Chía,3145550707
+117,Nicolás Herrera,nicolas.herrera@example.com,Tunja,3035551414
+126,Daniela Moreno,daniela.moreno@example.com,Cali,3105552121
+135,Juliana Cárdenas,juliana.cardenas@example.com,Cajicá,3175552828
