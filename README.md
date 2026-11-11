@@ -1,86 +1,137 @@
-# CleanDataBot — prototipo funcional para clase
+# CleanDataBot — calidad de datos con aprobación humana
 
-Este prototipo demuestra un solo flujo del MVP: cargar CSV/Excel, perfilar los datos, revisar posibles coincidencias con *fuzzy matching*, aprobar o rechazar sugerencias y descargar una copia corregida.
+Prototipo académico con React + TypeScript + Vite y FastAPI + pandas + RapidFuzz. Permite cargar CSV/Excel, analizar problemas y acumular correcciones en una versión de trabajo antes de descargar un único CSV.
 
-## Tecnologías
+## Ejecutar en desarrollo
 
-- Frontend: React + TypeScript + Vite.
-- Backend: FastAPI + Python.
-- Análisis: pandas + RapidFuzz.
-- Formatos de entrada: CSV y Excel (`.xlsx` / `.xls`).
-- Salida de la demo: CSV.
+Requiere Python 3.10 o superior y Node.js compatible con la versión instalada de Vite. Los archivos `run_backend.bat` y `run_frontend.bat` siguen disponibles.
 
-## Ejecutar en Windows
-
-Requiere Python 3.10 o superior y Node.js instalado.
-
-1. Abre `run_backend.bat` en una terminal. La primera ejecución instala las dependencias y levanta la API en `http://localhost:8000`.
-2. Abre otra terminal y ejecuta `run_frontend.bat`. Vite mostrará la dirección local; normalmente `http://localhost:5173`.
-3. En la pantalla, pulsa **Usar dataset de ejemplo** para iniciar la demostración rápidamente, o carga un archivo propio.
-
-También puedes ejecutar los comandos manualmente:
-
-```bash
+```powershell
 cd backend
 python -m venv .venv
-# Windows: .venv\Scripts\activate
-# macOS/Linux: source .venv/bin/activate
-python -m pip install -r requirements.txt
-uvicorn main:app --reload
+./.venv/Scripts/python.exe -m pip install -r requirements-dev.txt
+./.venv/Scripts/python.exe -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 En otra terminal:
 
-```bash
+```powershell
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
-## Guion breve para presentar
+Abrir la dirección indicada por Vite, normalmente `http://localhost:5173`. Para ejecutar sin las dependencias de pruebas se puede instalar `backend/requirements.txt`.
 
-1. Cargar el dataset de ejemplo.
-2. Explicar el resumen: número de registros, columnas, nulos y duplicados exactos.
-   Revisar el **Perfil de columnas**: tipo de dato inferido, valores vacíos, porcentaje de completitud y cantidad de valores únicos no vacíos. Los nulos y las celdas con solo espacios cuentan como vacíos.
-   Pulsar **Ver valores vacíos** en una columna para mostrar todos sus registros afectados, incluso los que estén después de los primeros 50. **Quitar filtro** restaura la vista previa.
-3. Buscar coincidencias por la columna `nombre`.
-4. Aprobar una sugerencia y rechazar otra.
-5. Descargar la copia corregida y explicar que el original no se modifica.
+El frontend usa `VITE_API_URL` o `http://localhost:8000`. El backend permite configurar `CORS_ORIGINS` como lista separada por comas; elimina espacios y entradas vacías. Sin esa variable conserva `http://localhost:5173` y `http://127.0.0.1:5173`.
 
-## Alcance intencional de esta demo
+## Flujo integrado
 
-- Los análisis se guardan temporalmente en memoria y se pierden al reiniciar el backend.
-- No hay inicio de sesión, base de datos ni historial persistente en este fragmento.
-- El sistema compara una columna de texto por búsqueda y propone reemplazar el valor de una fila por el valor de otra fila similar.
-- El umbral de similitud es configurable. Un puntaje alto no prueba por sí mismo que dos registros pertenezcan a la misma persona; la decisión queda en manos del usuario.
-- No se fusionan filas ni se ejecutan correcciones sin aprobación.
-- La revisión de duplicados permite omitir registros de una copia únicamente mediante decisiones confirmadas.
-- La copia corregida se exporta como CSV para facilitar la demostración.
+1. **Cargar y analizar.** Elegir un archivo o el ejemplo existente de 50 registros (`frontend/public/clientes_demo.csv`). Se conservan dos copias independientes: original y trabajo.
+2. **Consultar problemas.** Perfil por columna, tipos inferidos, vacíos, completitud y valores distintos. **Ver valores vacíos** filtra todo el dataset de trabajo, incluidos registros posteriores a la vista previa de 50 filas.
+3. **Limpiar texto.** Seleccionar columnas, previsualizar recorte de extremos, reducción de espacios repetidos y mayúsculas/minúsculas. Aprobar celdas individuales o todas las propuestas y pulsar **Aplicar cambios aprobados**.
+4. **Corregir variantes por grupos.** Buscar grupos en una columna, revisar cantidades, elegir un valor canónico existente o escribirlo manualmente. Excluir variantes cuando corresponda y comprobar la cantidad real de celdas que cambiarán antes de **Aprobar y aplicar grupo**.
+5. **Resolver duplicados.** Comparar todos los campos y sus diferencias. Elegir conservar una fila o conservar ambas como registros diferentes. **Confirmar decisión** prepara la decisión; **Aplicar decisiones confirmadas** modifica el trabajo. Las decisiones incompatibles se rechazan y se pueden deshacer antes de aplicarlas.
+6. **Revisar el resultado actualizado.** Todos los módulos consultan el trabajo vigente. Cada aplicación actualiza indicadores, perfiles, vista previa y filtros.
+7. **Descargar dataset corregido.** La acción principal descarga el estado acumulado en CSV UTF-8 con BOM. Descargar no aprueba ni aplica operaciones; repetirlo devuelve el mismo contenido mientras no se apliquen cambios nuevos.
 
-Esta demo sirve para validar el flujo principal del MVP; todavía no representa el producto completo ni reemplaza la persistencia prevista con MySQL.
+La estandarización individual por coincidencia difusa se conserva: buscar similitudes, aprobar o rechazar cada propuesta y aplicar solo las aprobadas. Este módulo cambia valores y nunca elimina filas.
 
-## Verificación del perfil y filtro
+## Grupos y alcance de las equivalencias
 
-Desde `backend`, ejecutar `python -m unittest test_profiles -v`. Las pruebas cubren estadísticas, celdas con espacios, columnas vacías o completas y registros afectados fuera de la vista previa.
+La normalización compara mayúsculas/minúsculas, tildes y espacios. Conserva las variantes originales en la previsualización. Un grupo equivalente por normalización se distingue de una **propuesta aproximada**, que muestra el parecido textual de cada variante con el ancla. Ese porcentaje no es una probabilidad de identidad.
 
-## Limpieza de texto con aprobación
+En grupos aproximados, las variantes aproximadas empiezan excluidas: el usuario debe incluirlas expresamente. Las equivalentes por normalización aparecen seleccionadas, pero requieren la aprobación del grupo. Elegir el canónico no aprueba por sí solo la operación.
 
-En **Limpieza de texto**, seleccionar una o varias columnas y activar el recorte de espacios en los extremos, la reducción de espacios repetidos o la conversión a mayúsculas/minúsculas. Se ejecutan en ese orden; cada opción puede usarse por separado.
+El ancla propuesta es la variante más frecuente de su clase normalizada; los empates conservan el orden de aparición. Los grupos aproximados son estrellas de comparaciones directas con esa ancla: A≈B y B≈C nunca implican agrupar automáticamente A con C. Cada clase normalizada pertenece como máximo a una estrella aproximada por búsqueda, para evitar respuestas cuadráticas con variantes muy parecidas. Las equivalencias normalizadas también se muestran por separado. Una nueva búsqueda puede producir propuestas distintas después de aplicar cambios.
 
-**Previsualizar cambios** muestra todos los valores que cambiarán, con su registro, columna, valor original y propuesto. Las comillas permiten distinguir espacios en los extremos. Los nulos y los valores que no son texto se conservan. Cambiar opciones invalida la previsualización.
+Las reglas aprobadas están limitadas a **esa columna y esas variantes exactas**. Todas sus apariciones seleccionadas cambian en el trabajo actual; las que ya coinciden con el canónico y las excluidas permanecen iguales. El número de filas no cambia. Por ejemplo, 20 `Bogotá`, 12 `BOGOTA` y 8 `bogota`, con canónico `Bogotá`, producen **20 celdas modificadas**, conservando las 40 filas.
 
-**Aprobar y descargar copia limpia** aplica exactamente la propuesta revisada y descarga un CSV nuevo con sufijo `_limpio`. Esta copia contiene la limpieza de texto seleccionada; las sugerencias de similitud cuentan con su propia exportación. El dataset cargado permanece intacto.
+Las equivalencias aprobadas se pueden consultar durante el análisis activo. Son un registro de las operaciones aprobadas, no reglas automáticas para futuros archivos. Se pierden al reiniciar; persistirlas y reutilizarlas entre sesiones queda pendiente.
 
-Desde `backend`, ejecutar `python -m unittest test_profiles test_text_cleanup -v` para verificar ambas funciones.
+## Consistencia, filas estables y errores
 
-## Comparar duplicados y registros similares
+El índice interno se asigna al cargar y no se renumera tras eliminar filas. La interfaz muestra **Registro original** para que una fila siga siendo identificable. Es metadato, no una columna del dataset; la exportación usa `index=False`.
 
-En **Comparación de registros**, elegir una columna de texto y el umbral, o **Solo duplicados exactos**. La búsqueda incluye duplicados exactos y la mejor coincidencia anterior de cada registro. Cada par muestra todos los campos y resalta las diferencias con color y una etiqueta.
+Cada cambio real incrementa `revision`. Las propuestas de limpieza, grupos, coincidencias y duplicados guardan la revisión sobre la que se generaron. Aplicar sobre otra revisión, reenviar una aprobación consumida o usar una propuesta reemplazada devuelve HTTP **409**, con `detail.code = stale_proposal`. El frontend actualiza el estado y descarta las propuestas anteriores. Las decisiones incompatibles de duplicados también devuelven 409, pero conservan la revisión y las decisiones válidas para que el usuario pueda corregirlas.
 
-Elegir **Conservar registro…** o **Son registros diferentes: conservar ambos** y pulsar **Confirmar decisión**. La selección por sí sola no cambia la exportación. **Deshacer decisión** revierte la confirmación. Las decisiones que intenten eliminar un registro que otra decisión exige conservar se rechazan sin modificar las confirmaciones anteriores.
+Las operaciones se validan completas y se preparan en una copia. El cálculo del resumen también debe terminar antes de publicar el trabajo nuevo. Un bloqueo por análisis serializa aprobaciones concurrentes: dos aplicaciones de una misma propuesta no se ejecutan dos veces. Los formularios muestran procesamiento, deshabilitan controles y tienen una protección síncrona contra envíos duplicados.
 
-**Exportar decisiones confirmadas** descarga una copia `_revisado.csv`: omite únicamente los registros cuya eliminación fue confirmada. Sin confirmaciones, conserva todo el dataset. Los pares pendientes conservan ambos registros, salvo que otra decisión confirmada elimine uno de ellos. Marcar un par como diferente protege ambos registros. El original permanece intacto.
+Una operación sin cambios reales no incrementa la revisión ni los contadores. Confirmar decisiones de duplicados no modifica datos hasta aplicarlas. Los pares pendientes no ordenan eliminar registros; una eliminación explícita en otro par sí puede afectar uno de esos registros. **Conservar ambos** protege las dos filas dentro de la revisión vigente. Cambiar datos invalida esa revisión; la próxima búsqueda requiere decisiones nuevas. No existe deshacer global después de aplicar: se puede volver a cargar el original para iniciar otro análisis.
 
-Cambiar los criterios o volver a buscar inicia una revisión nueva. Esta exportación aplica las decisiones sobre registros completos; la limpieza de texto y la estandarización de valores mantienen sus exportaciones separadas.
+## Definición de los indicadores
 
-Ejecutar las comprobaciones desde `backend`: `python -m unittest test_profiles test_text_cleanup test_duplicates -v`.
+- **Registros originales:** filas leídas al cargar.
+- **Registros actuales:** filas que permanecen en el trabajo.
+- **Celdas modificadas:** diferencias actuales frente al original, en las filas que aún existen. Cada celda cuenta una vez aunque haya sido transformada varias veces; si vuelve a su valor original deja de contar. Las celdas de filas eliminadas no se incluyen.
+- **Filas eliminadas:** originales menos actuales. Se cuentan aparte; varias decisiones sobre la misma eliminación no la duplican.
+- **Valores vacíos:** nulos y cadenas vacías o con solo espacios.
+- **Completitud:** `100 × celdas no vacías / celdas actuales`; por columna usa sus filas actuales. En un conjunto sin celdas se define como 100 %.
+- **Duplicados exactos:** filas repetidas después de la primera aparición, calculadas sobre los valores actuales de todas las columnas.
+- **Valores únicos:** valores distintos no vacíos de cada columna. El tipo es inferido, no una validación semántica del contenido.
+
+El aviso de cada aplicación informa celdas modificadas y filas eliminadas **en esa operación**. El resumen cuenta el estado neto. Eliminar una fila completa puede reducir la completitud al cambiar el denominador; los porcentajes no se fuerzan a mejorar.
+
+## Contrato HTTP
+
+Todas las rutas siguientes están bajo `/api/analyses/{analysis_id}` salvo la carga:
+
+| Acción | Método y ruta | Contrato principal |
+|---|---|---|
+| Cargar | `POST /api/analyze` | Multipart `file`; devuelve resumen con `revision=0` |
+| Estado actual | `GET /api/analyses/{analysis_id}` | Resumen, perfiles, números estables y equivalencias |
+| Vacíos | `GET .../empty-rows?column=...` | `revision`, `rows`, `row_numbers`, `total` |
+| Previsualizar texto | `POST .../text-cleanup/preview` | `columns`, `trim`, `collapse_spaces`, `letter_case` |
+| Aplicar texto | `POST .../text-cleanup/apply` | `preview_id`, `revision`, `approved_change_ids` |
+| Similitudes individuales | `POST .../matches` | `column`, `threshold`; devuelve `proposal_id`, `revision`, `matches` |
+| Aplicar similitudes | `POST .../matches/apply` | `proposal_id`, `revision`, `approved_match_ids` |
+| Buscar grupos | `POST .../groups/search` | `column`, `threshold`; devuelve grupos, cantidades y relaciones |
+| Aplicar grupo | `POST .../groups/apply` | `proposal_id`, `revision`, `group_id`, `variants`, `canonical` |
+| Buscar duplicados | `POST .../duplicates/search` | `column` opcional, `threshold`; devuelve `review_id` y `revision` |
+| Confirmar/deshacer | `POST .../duplicates/decision` | `review_id`, `revision`, `pair_id`, `action` |
+| Aplicar duplicados | `POST .../duplicates/apply` | `review_id`, `revision`; aplica solo decisiones confirmadas |
+| Descargar | `GET .../export` | CSV del trabajo; cabecera `X-Dataset-Revision`; sin efectos secundarios |
+
+Las aplicaciones devuelven `{analysis, changed_values, deleted_rows}`. Se retiraron las exportaciones por módulo y el antiguo `POST .../export` que aplicaba correcciones durante la descarga. Los clientes deben usar las rutas `apply` y la descarga `GET`.
+
+## Verificación
+
+```powershell
+cd backend
+./.venv/Scripts/python.exe -m pip install -r requirements-dev.txt
+./.venv/Scripts/python.exe -m unittest discover -v
+./.venv/Scripts/python.exe benchmark.py --output benchmark_after.json --repeats 3
+```
+
+```powershell
+cd frontend
+npm ci
+npm run build
+```
+
+Las pruebas existentes se conservaron y adaptaron al contrato de aplicación. La suite cubre original intacto, recorrido acumulado, exclusión de variantes, límites por columna, canónico manual, ausencia de agrupación transitiva, identificadores tras eliminaciones, exportación repetida, aprobaciones concurrentes, propuestas obsoletas, incompatibilidades y atomicidad. `TestClient` verifica el contrato HTTP usado por React, incluida carga multipart, filtros y CSV final.
+
+Resultados reales, entorno, mediciones antes/después y alcance de la comprobación están en [docs/verification.md](docs/verification.md). El caso pequeño `frontend/public/grupos_demo.csv` se añadió para una demostración determinista; el ejemplo de 50 registros existente se conserva sin cambios.
+
+## Prueba manual y guion de video
+
+1. Mostrar **Ejemplo de 50 registros**, revisar indicadores, perfil y el filtro de vacíos. Explicar que estos datos proceden del trabajo vigente.
+2. Cambiar al **Ejemplo de grupos** (8 filas) para que el efecto sea fácil de contar.
+3. En limpieza, conservar solo `nombre`, activar recortar extremos y reducir espacios, previsualizar, aprobar todos y aplicar: **5 celdas modificadas** en esa operación.
+4. Buscar grupos por `ciudad`. Elegir `Bogotá`; mostrar 3 apariciones de `Bogotá`, 2 de `BOGOTA` y 2 de `bogota`. Excluir temporalmente `BOGOTA`: el contador baja de 4 a 2. Volver a incluirla y aplicar: **4 cambios**, sin eliminar filas.
+5. Buscar **Solo duplicados exactos**. Comparar registros originales **1 y 7**, elegir conservar 1, confirmar y aplicar: **1 fila eliminada**. Antes de aplicar también se puede mostrar **Conservar ambos** o **Deshacer decisión**.
+6. Mostrar el resumen: **8 originales, 7 actuales, 8 celdas modificadas netas, 1 eliminada y 0 duplicados exactos**. La completitud pasa de 97,5 % a 97,14 % porque se eliminó una fila completa. El filtro de `correo` sigue mostrando el registro original 4.
+7. Descargar un único CSV y abrirlo: `Ana María` está limpio, hay seis ciudades `Bogotá`, el duplicado ya no aparece y no hay columna interna adicional. Descargar nuevamente no cambia el resultado.
+8. Abrir el CSV fuente para mostrar que conserva ocho filas y sus variantes originales. Explicar que las equivalencias duran solo durante el análisis activo.
+
+Guion breve: “Cargamos y vemos problemas reales. Revisamos el antes y después antes de aplicar. Una aprobación corrige varias apariciones de ciudad y respeta las variantes excluidas. Resolver duplicados es una decisión independiente. El resumen se recalcula sobre el trabajo actual. Esta descarga reúne todas las correcciones y conserva el archivo original”.
+
+## Límites vigentes
+
+- Máximo 10 MB y 2.000 filas; entrada CSV/Excel y salida CSV.
+- Estado temporal en memoria, un solo proceso/worker. Reiniciar el backend pierde análisis, decisiones y equivalencias. No hay base de datos ni historial persistente.
+- La revisión de registros propone duplicados exactos y la mejor coincidencia anterior por registro, no todas las combinaciones posibles.
+- La estandarización individual omite filas duplicadas exactas; la corrección por grupos sí alcanza todas las apariciones aprobadas. La similitud sigue siendo textual y requiere revisión humana.
+- El algoritmo de grupos evita cadenas transitivas; no implementa clustering semántico. Buscar nuevamente después de aplicar puede proponer otros grupos.
+- Las mediciones publicadas describen únicamente los tamaños y características probados. Muchos valores distintos pueden incrementar el costo de las comparaciones.
+- Sin autenticación, despliegue nuevo, modelos de IA adicionales, PDF, Word ni procesamiento de cartas. Esta entrega se verifica en desarrollo; el despliegue se gestiona posteriormente.

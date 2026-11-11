@@ -1,0 +1,67 @@
+{
+  "platform": "Windows-11-10.0.26300-SP0",
+  "processor": "Intel64 Family 6 Model 154 Stepping 4, GenuineIntel",
+  "python": "3.14.7",
+  "packages": {
+    "pandas": "2.3.3",
+    "fastapi": "0.141.1",
+    "rapidfuzz": "3.14.6"
+  },
+  "repeats": 3,
+  "results": [
+    {
+      "rows": 50,
+      "columns": 6,
+      "distinct_cities": 8,
+      "analysis_ms": [
+        15.269099967554212,
+        5.535100121051073,
+        6.756799994036555
+      ],
+      "matches_ms": [
+        3.1431999523192644,
+        2.7807001024484634,
+        2.897900063544512
+      ],
+      "analysis_median_ms": 6.756799994036555,
+      "matches_median_ms": 2.897900063544512,
+      "suggestions": 40
+    },
+    {
+      "rows": 500,
+      "columns": 6,
+      "distinct_cities": 8,
+      "analysis_ms": [
+        11.814499972388148,
+        8.51630000397563,
+        12.371400138363242
+      ],
+      "matches_ms": [
+        250.17499993555248,
+        233.5008999798447,
+        243.5315998736769
+      ],
+      "analysis_median_ms": 11.814499972388148,
+      "matches_median_ms": 243.5315998736769,
+      "suggestions": 410
+    },
+    {
+      "rows": 2000,
+      "columns": 6,
+      "distinct_cities": 8,
+      "analysis_ms": [
+        20.289900014176965,
+        21.42760017886758,
+        47.1673000138253
+      ],
+      "matches_ms": [
+        3942.255800124258,
+        8995.259799994528,
+        8843.74830010347
+      ],
+      "analysis_median_ms": 21.42760017886758,
+      "matches_median_ms": 8843.74830010347,
+      "suggestions": 1645
+    }
+  ]
+}

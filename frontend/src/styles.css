@@ -71,6 +71,12 @@ h1 span { color: #4263c3; }
 .duplicate-decisions select { width: 100%; min-width: 0; }
 .duplicate-panel > .section-copy { margin-top: 12px; }
 .duplicate-panel .export-row .section-copy { margin: 0; }
+.workspace-controls { min-width: 0; border: 0; padding: 0; margin: 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+.processing-status { position: sticky; top: 0; z-index: 3; padding: 12px; background: #edf2ff; color: #284aa9; border: 1px solid #c8d5fa; border-radius: 8px; margin-bottom: 15px; }
+.control-group input[type="text"] { width: 100%; min-height: 40px; padding: 8px 11px; border: 1px solid #dfe6ef; border-radius: 8px; color: #354761; }
+button:disabled { cursor: not-allowed; opacity: .5; }
+.suggestion.approved .approve-button, .suggestion.rejected .reject-button { outline: 2px solid currentColor; }
 .selected-column td { background: #edf2ff; }
 .text-button:focus-visible { outline: 2px solid #4263bc; outline-offset: 3px; }
 table { width: 100%; border-collapse: collapse; text-align: left; white-space: nowrap; }
