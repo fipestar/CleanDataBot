@@ -1,0 +1,10 @@
+full_name,email,phone,document,city
+" Ana  María Pérez ",ana@example.com,,100,BOGOTA
+Ana Maria Pérez,ana@example.com,3001234567,100,Bogotá
+Ana Maria Pérez,ana@example.com,3001234567,100,Bogotá
+Andrea López,andrea@example.com,3002000000,200,Cali
+Andrea Lopez,otra@example.com,3002000001,201,Cali
+Carlos Ruiz,,,300,Tunja
+Carlos Ruis,,,301,Tunja
+Laura Díaz,laura@example.com,3004000000,400,Cali
+LAURA DIAZ,laura@example.com,3004000000,401,Cali

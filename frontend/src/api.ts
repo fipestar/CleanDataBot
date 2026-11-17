@@ -1,3 +1,5 @@
+import type { AutoEvent, AutoReport } from './autoTypes'
+
 export type Row = Record<string, string | number | boolean | null>
 export type Analysis = {
   analysis_id: string; revision: number; filename: string; columns: string[]; text_columns: string[]
@@ -7,6 +9,8 @@ export type Analysis = {
   column_profiles: { name: string; data_type: string; empty_count: number; completeness: number; unique_count: number }[]
   preview: Row[]; preview_limit: number; preview_row_numbers: number[]
   equivalences: { column: string; variants: string[]; canonical: string; changed_values: number; revision: number }[]
+  automatic_report: AutoReport | null
+  automatic_audit: AutoEvent[]
 }
 export type ApplyResult = { analysis: Analysis; changed_values: number; deleted_rows: number }
 export type Run = (operation: (signal: AbortSignal) => Promise<void>) => void

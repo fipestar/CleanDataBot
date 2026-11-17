@@ -15,6 +15,8 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
+from auto_cleanup import (AutoApproval, AutoCleanupRequest, ColumnRule, ExceptionDecision,
+                          infer_mapping, plan_cleanup, record_hash)
 
 try:
     from rapidfuzz import fuzz
@@ -111,7 +113,9 @@ def create_state(frame: pd.DataFrame, filename: str) -> dict[str, Any]:
     if not frame.columns.is_unique:
         raise HTTPException(status_code=400, detail="Los nombres de las columnas deben ser únicos.")
     return {"frame": frame, "original_frame": frame.copy(deep=True), "filename": filename,
-            "revision": 0, "lock": threading.RLock(), "equivalences": []}
+            "revision": 0, "lock": threading.RLock(), "equivalences": [],
+            "automatic_report": None, "automatic_audit": [], "automatic_separations": [],
+            "automatic_config": None}
 
 def get_state(analysis_id: str) -> dict[str, Any]:
     state = analyses.get(analysis_id)
@@ -143,7 +147,10 @@ def summary(analysis_id: str, state: dict[str, Any]) -> dict[str, Any]:
             "unique_count": int(frame.loc[~empty_values(frame[column]), column].nunique())} for column in frame.columns],
         "preview": json_records(frame), "preview_limit": min(50, len(frame)),
         "preview_row_numbers": [int(index) + 1 for index in frame.head(50).index],
-        "equivalences": list(state["equivalences"])}
+        "equivalences": list(state["equivalences"]),
+        "automatic_report": ({**state["automatic_report"], "is_current": state["automatic_report"]["revision"] == state["revision"]}
+                             if state.get("automatic_report") else None),
+        "automatic_audit": state.get("automatic_audit", [])}
 
 def require_proposal(state: dict[str, Any], key: str, identifier: str, revision: int) -> dict[str, Any]:
     proposal = state.get(key)
@@ -159,16 +166,20 @@ def selected_changes(changes: list[dict[str, Any]], identifiers: list[str]) -> l
     return [known[identifier] for identifier in dict.fromkeys(identifiers)]
 
 def commit(analysis_id: str, state: dict[str, Any], frame: pd.DataFrame, changed: int = 0,
-           deleted: int = 0, equivalence: dict[str, Any] | None = None) -> dict[str, Any]:
+           deleted: int = 0, equivalence: dict[str, Any] | None = None,
+           metadata: dict[str, Any] | None = None) -> dict[str, Any]:
     # Called with the lock held, after validating the entire operation on a copy.
-    if changed or deleted:
+    if changed or deleted or metadata:
         next_state = {**state, "frame": frame, "revision": state["revision"] + 1,
-                      "equivalences": state["equivalences"] + ([equivalence] if equivalence else [])}
+                      "equivalences": state["equivalences"] + ([equivalence] if equivalence else []), **(metadata or {})}
+        if not (changed or deleted):
+            next_state["revision"] = state["revision"]
         # Even derived metrics must succeed before publishing the new version.
         result = summary(analysis_id, next_state)
         state.update(next_state)
-        for key in ["cleanup", "matches", "groups", "duplicates"]:
-            state.pop(key, None)
+        if changed or deleted:
+            for key in ["cleanup", "matches", "groups", "duplicates", "automatic_proposal"]:
+                state.pop(key, None)
     else:
         result = summary(analysis_id, state)
     return {"analysis": result, "changed_values": changed, "deleted_rows": deleted}
@@ -474,3 +485,103 @@ def export_corrected(analysis_id: str) -> Response:
             "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename, safe='')}",
             "X-Dataset-Revision": str(state["revision"]),
             "Access-Control-Expose-Headers": "Content-Disposition, X-Dataset-Revision"})
+
+@app.get("/api/analyses/{analysis_id}/auto-cleanup/config")
+def auto_cleanup_config(analysis_id: str) -> dict[str, Any]:
+    state = get_state(analysis_id)
+    with state["lock"]:
+        mappings, warnings = infer_mapping(state["frame"].columns, normalize_for_match)
+        configured = state.get("automatic_config")
+        if configured is None:
+            replacements = {}
+            for rule in state["equivalences"]:
+                for variant in rule["variants"]:
+                    replacements.setdefault(rule["column"], {})[variant] = rule["canonical"]
+            configured = AutoCleanupRequest(revision=state["revision"], fields=mappings, column_rules=[
+                ColumnRule(column=column, replacements=[{"variant": variant, "canonical": canonical}
+                    for variant, canonical in replacements.get(column, {}).items() if variant != canonical])
+                for column in summary(analysis_id, state)["text_columns"]
+            ]).model_dump()
+        return {"config": {**configured, "revision": state["revision"]}, "warnings": warnings}
+
+
+def check_revision(state, revision):
+    if state["revision"] != revision:
+        raise HTTPException(409, {"code": "stale_proposal", "message": "El dataset cambió. Actualiza la configuración y genera una nueva limpieza automática."})
+
+
+@app.post("/api/analyses/{analysis_id}/auto-cleanup/preview")
+def preview_auto_cleanup(analysis_id: str, request: AutoCleanupRequest) -> dict[str, Any]:
+    state = get_state(analysis_id)
+    with state["lock"]:
+        check_revision(state, request.revision)
+        frame, report = plan_cleanup(state["frame"], request, transform=clean_text,
+            normalize=normalize_for_match, similarity=similarity, separations=state["automatic_separations"])
+        plan_id = str(uuid.uuid4())
+        public = {"plan_id": plan_id, "revision": state["revision"], "rows_before": len(state["frame"]),
+                  "rows_after": len(frame), **report}
+        state["automatic_proposal"] = {"id": plan_id, "revision": state["revision"],
+                                       "frame": frame, "report": public, "config": request.model_dump()}
+        return public
+
+
+@app.post("/api/analyses/{analysis_id}/auto-cleanup/apply")
+def apply_auto_cleanup(analysis_id: str, request: AutoApproval) -> dict[str, Any]:
+    state = get_state(analysis_id)
+    with state["lock"]:
+        proposal = require_proposal(state, "automatic_proposal", request.plan_id, request.revision)
+        frame = proposal["frame"]
+        before = state["frame"].loc[frame.index]
+        equal = frame.eq(before) | (frame.isna() & before.isna())
+        changed = int((~equal.fillna(False)).sum().sum())
+        deleted = len(state["frame"]) - len(frame)
+        revision = state["revision"] + int(bool(changed or deleted))
+        report = {**proposal["report"], "run_id": request.plan_id, "revision": revision,
+                  "source_revision": request.revision, "manual_rows_removed": 0}
+        events = [{**event, "run_id": request.plan_id, "revision": revision} for event in report["events"]]
+        result = commit(analysis_id, state, frame, changed=changed, deleted=deleted, metadata={
+            "automatic_report": report, "automatic_audit": state["automatic_audit"] + events,
+            "automatic_config": proposal["config"]})
+        state.pop("automatic_proposal", None)
+        return result
+
+
+@app.post("/api/analyses/{analysis_id}/auto-cleanup/review")
+def review_auto_exception(analysis_id: str, request: ExceptionDecision) -> dict[str, Any]:
+    state = get_state(analysis_id)
+    with state["lock"]:
+        check_revision(state, request.revision)
+        report = state.get("automatic_report")
+        if report is None or report["run_id"] != request.run_id or report["revision"] != request.revision:
+            raise HTTPException(409, {"code": "stale_proposal", "message": "Las excepciones están obsoletas. Genera una nueva limpieza automática."})
+        group = next((group for group in report["pending_groups"] if group["id"] == request.group_id), None)
+        if group is None:
+            raise HTTPException(409, {"code": "stale_proposal", "message": "Este grupo ya fue revisado. Actualiza el estado."})
+        members = {row["row"] for row in group["records"]}
+        removed = set(request.remove_rows)
+        if request.action == "remove_selected":
+            if not removed or not removed.issubset(members) or request.keep_row not in members or request.keep_row in removed:
+                raise HTTPException(400, "Selecciona un registro que conservar y únicamente filas del grupo que eliminar. No se puede eliminar el registro conservado.")
+        elif removed or request.keep_row is not None:
+            raise HTTPException(400, "Conservar todos no admite filas para eliminar ni un único registro conservado.")
+        separations = list(state["automatic_separations"])
+        if request.action == "keep_all":
+            separations.append({"signature": group["id"], "records": [{"row": row["row"], "hash": record_hash(row["values"])} for row in group["records"]]})
+        corrected = state["frame"].drop(index=[row - 1 for row in removed]).copy(deep=True)
+        revision = state["revision"] + int(bool(removed))
+        # Refresh groups after a manual decision without executing any additional
+        # transformations or merges. Removing a bridge may split a review group.
+        _, pending = plan_cleanup(corrected, AutoCleanupRequest(**{**state["automatic_config"], "revision": revision}),
+            transform=clean_text, normalize=normalize_for_match, similarity=similarity,
+            separations=separations, review_only=True)
+        remaining_groups = pending["pending_groups"]
+        new_report = {**report, "revision": revision, "pending_groups": remaining_groups,
+                      "manual_rows_removed": report["manual_rows_removed"] + len(removed),
+                      "counts": {**report["counts"], "pending_groups": len(remaining_groups)}}
+        event = {"rule": "manual_keep_all" if request.action == "keep_all" else "manual_exception_removal",
+                 "rows": sorted(members), "removed_rows": sorted(removed), "kept_row": request.keep_row,
+                 "run_id": request.run_id, "revision": revision}
+        result = commit(analysis_id, state, corrected, deleted=len(removed), metadata={
+            "automatic_report": new_report, "automatic_audit": state["automatic_audit"] + [event],
+            "automatic_separations": separations, "automatic_proposal": None})
+        return result

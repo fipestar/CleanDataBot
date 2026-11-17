@@ -77,6 +77,17 @@ h1 span { color: #4263c3; }
 .control-group input[type="text"] { width: 100%; min-height: 40px; padding: 8px 11px; border: 1px solid #dfe6ef; border-radius: 8px; color: #354761; }
 button:disabled { cursor: not-allowed; opacity: .5; }
 .suggestion.approved .approve-button, .suggestion.rejected .reject-button { outline: 2px solid currentColor; }
+.automatic-panel { margin-bottom: 24px; }
+.upload-actions { flex-wrap: wrap; }
+.automatic-panel h4 { color: #26364c; font-size: 14px; margin: 18px 0 10px; }
+.automatic-panel summary { cursor: pointer; color: #36528f; font-size: 12px; font-weight: 700; padding: 8px 0; }
+.automatic-mappings { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin: 16px 0; }
+.automatic-panel input[type="text"], .automatic-panel input[type="number"] { max-width: 100%; min-height: 35px; padding: 7px 9px; border: 1px solid #dfe6ef; border-radius: 7px; }
+.automatic-column { padding: 4px 12px 12px; margin: 8px 0; border: 1px solid #e5ebf4; border-radius: 8px; font-size: 12px; }
+.automatic-column .cleanup-columns { margin: 12px 0; }
+.automatic-audit { margin-top: 16px; }
+.automatic-conflict { background: #fff4d8; }
+.automatic-preview { margin-top: 20px; padding: 16px; border: 1px solid #c8d5fa; border-radius: 10px; }
 .selected-column td { background: #edf2ff; }
 .text-button:focus-visible { outline: 2px solid #4263bc; outline-offset: 3px; }
 table { width: 100%; border-collapse: collapse; text-align: left; white-space: nowrap; }

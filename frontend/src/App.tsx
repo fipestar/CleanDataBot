@@ -2,6 +2,7 @@ import { ChangeEvent, useEffect, useState } from 'react'
 import TextCleanup from './TextCleanup'
 import DuplicateReview from './DuplicateReview'
 import SimilarityReview from './SimilarityReview'
+import AutomaticCleanup from './AutomaticCleanup'
 import { API, Analysis, ApplyResult, Row, checked, downloadBlob, get, valueText } from './api'
 import { useOperation } from './useOperation'
 
@@ -41,6 +42,7 @@ export default function App() {
         <div className="upload-actions"><label className="button button-primary file-button">Elegir archivo<input type="file" accept=".csv,.xlsx,.xls" onChange={chooseFile} disabled={busy} /></label>
           <button className="button button-secondary" disabled={busy} onClick={() => loadExample('clientes_demo.csv')}>Ejemplo de 50 registros</button>
           <button className="button button-secondary" disabled={busy} onClick={() => loadExample('grupos_demo.csv')}>Ejemplo de grupos</button>
+          <button className="button button-secondary" disabled={busy} onClick={() => loadExample('clientes_automatico_demo.csv')}>Ejemplo de limpieza automática</button>
         </div></div>
       {busy && <p role="status">Analizando archivo…</p>}{error && <div className="alert alert-error" role="alert">{error}</div>}
     </section>}
@@ -108,6 +110,7 @@ function Workspace({ initial, changeFile }: { initial: Analysis; changeFile: () 
         <Metric label="Completitud actual (%)" value={analysis.completeness} /><Metric label="Columnas" value={analysis.column_count} />
       </div>
       <p className="section-copy">Las celdas modificadas cuentan diferencias frente al original en las filas que aún existen, una vez por celda. Las filas eliminadas se cuentan por separado. Completitud = celdas no vacías / celdas actuales. Los porcentajes pueden subir o bajar al eliminar filas.</p>
+      <AutomaticCleanup analysis={analysis} run={run} applied={applied} />
       <div className="table-heading"><div><h3>Perfil de columnas</h3><p>Sobre el estado actual. Vacíos: nulos y textos con solo espacios. Únicos: valores distintos no vacíos.</p></div></div>
       <div className="table-wrap profile-table"><table aria-label="Perfil de columnas"><thead><tr><th>Columna</th><th>Tipo de dato</th><th>Valores vacíos</th><th>Completitud</th><th>Valores únicos</th><th>Acciones</th></tr></thead><tbody>
         {analysis.column_profiles.map((profile) => <tr key={profile.name} className={emptyColumn === profile.name ? 'selected-column' : ''}><td>{profile.name}</td><td>{profile.data_type}</td><td>{profile.empty_count}</td><td>{profile.completeness}%</td><td>{profile.unique_count}</td><td><button className="text-button" aria-label={`Ver valores vacíos en ${profile.name}`} onClick={() => setEmptyColumn(profile.name)}>Ver valores vacíos</button></td></tr>)}

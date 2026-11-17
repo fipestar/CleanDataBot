@@ -135,3 +135,85 @@ Guion breve: “Cargamos y vemos problemas reales. Revisamos el antes y después
 - El algoritmo de grupos evita cadenas transitivas; no implementa clustering semántico. Buscar nuevamente después de aplicar puede proponer otros grupos.
 - Las mediciones publicadas describen únicamente los tamaños y características probados. Muchos valores distintos pueden incrementar el costo de las comparaciones.
 - Sin autenticación, despliegue nuevo, modelos de IA adicionales, PDF, Word ni procesamiento de cartas. Esta entrega se verifica en desarrollo; el despliegue se gestiona posteriormente.
+
+## Limpieza automática
+
+La sección **Limpieza automática** permite completar cargar → analizar → configurar reglas → previsualizar → aplicar los casos seguros → revisar excepciones → descargar. Reutiliza la versión de trabajo, `clean_text`, la comparación textual, las revisiones y el `commit` atómico existentes. Los módulos manuales siguen disponibles y sus cambios se acumulan con esta limpieza en el CSV principal.
+
+### Configuración por archivo
+
+- **Asociar campos:** seleccionar las columnas de nombre, correo y teléfono, y marcar los identificadores del cliente. Se sugieren encabezados conocidos como `full_name`, `nombre completo`, `email`, `correo`, `phone`, `document` o `customer_id`. Las asociaciones ambiguas quedan sin seleccionar y muestran un aviso.
+- **Columnas de texto:** activar o desactivar recorte de extremos, reducción de espacios repetidos y reemplazos explícitos variante → canónico. La configuración inicial incorpora las equivalencias ya aprobadas en el análisis. No se elige un canónico por fuzzy matching sin una regla configurada.
+- **Umbrales:** 97 % de parecido de nombre para fusión automática por defecto, configurable entre 90 y 100; 85 % para presentar candidatos de revisión, configurable entre 60 y el umbral automático. Son medidas de parecido textual, no probabilidades de identidad.
+- **Columnas técnicas opcionales:** un ID interno distinto bloquea la fusión por defecto, igual que cualquier otro campo no vacío contradictorio. Solo puede ignorarse explícitamente si el usuario sabe que no identifica al cliente. No se pueden ignorar columnas asociadas a nombre, contacto o identificadores. En columnas ignoradas se conserva el valor de la primera fila y no se completan campos desde otras filas.
+
+Si falta nombre o no se ha asociado correo ni teléfono, se omite la fusión de clientes y el resultado explica el motivo. La normalización configurada y la eliminación de duplicados exactos siguen funcionando. Un nombre vacío o no textual tampoco cumple la regla automática para ese registro.
+
+### Reglas de eliminación y combinación
+
+1. Se eliminan filas exactamente iguales, conservando la primera según el orden original.
+2. Se ejecuta la normalización y se aplican únicamente los reemplazos de cada columna. Los valores canónicos también pasan por la normalización configurada. Las cadenas de reemplazos explícitos se resuelven hasta su destino final; los ciclos y canónicos contradictorios se rechazan antes de modificar el trabajo.
+3. Se buscan nuevamente duplicados exactos después de estandarizar.
+4. Para fusionar clientes debe existir nombre suficientemente parecido **y** correo o teléfono exacto no vacío. Dos vacíos nunca constituyen evidencia. La comparación de contacto quita espacios exteriores; no elimina signos del teléfono, no normaliza dominios, no ignora mayúsculas del correo y no infiere países.
+5. Cualquier contradicción no vacía en identificadores, contactos u otros campos no ignorados bloquea la combinación. El nombre puede variar dentro del umbral establecido; se conserva el nombre de la primera fila.
+6. Cada componente de contactos debe cumplir la regla **entre todos sus pares originales**, antes de completar campos. A comparte correo con B y B comparte teléfono con C no autoriza fusionar A, B y C si A y C carecen de evidencia directa.
+7. En un caso seguro se conserva la primera fila y se completan exclusivamente sus campos vacíos con datos compatibles del resto. Se elimina cada fila absorbida una sola vez. Una pasada final comprueba exactos tras completar campos.
+
+Los conflictos de un grupo bloquean toda su fusión automática: no se completan unos campos para luego descubrir un conflicto en otro miembro. La operación se prepara en una copia y se publica únicamente si todas las validaciones y métricas terminan correctamente. El original permanece intacto.
+
+### Excepciones agrupadas
+
+Después de aplicar aparecen grupos de candidatos, no cientos de pares repetidos. Los vínculos de nombre o contacto pueden conectar varios registros para **presentarlos juntos**, pero esa conexión no declara que sean una sola entidad y nunca autoriza una fusión automática. Cada registro aparece en un único grupo pendiente.
+
+La vista muestra todos los campos, motivos y columnas contradictorias. Se puede:
+
+- Elegir **Son diferentes: conservar todos**. La decisión se registra y se respeta en ejecuciones posteriores mientras esos registros conserven los mismos valores.
+- Elegir una fila que debe conservarse, marcar únicamente las filas que se desea eliminar y confirmar esa eliminación. Los registros no seleccionados permanecen; no se copian ni sobrescriben campos en esta eliminación manual.
+
+Después de una decisión se recalculan los grupos sobre las filas actuales, sin ejecutar transformaciones ni nuevas fusiones. Si se elimina el puente de una cadena de candidatos, los restantes pueden dejar de constituir un grupo. Los planes anteriores quedan invalidados. Si se cambia el trabajo desde otro módulo, las excepciones anteriores se muestran como históricas y deben generarse nuevamente.
+
+### Resumen y trazabilidad
+
+Todos los contadores proceden del procesamiento real:
+
+- **Celdas normalizadas:** celdas cuyo texto cambió por espacios en la ejecución.
+- **Variantes estandarizadas:** celdas reemplazadas por un canónico configurado.
+- **Duplicados eliminados:** exactos eliminados más filas absorbidas por una fusión segura de clientes.
+- **Campos vacíos completados:** asignaciones realizadas al registro conservado.
+- **Grupos pendientes:** grupos actuales aún sin resolver. Se actualizan al decidir sobre excepciones.
+
+Los pasos se cuentan en el momento de ejecutarse: una celda puede normalizarse y luego estandarizarse, y una fila transformada puede resultar duplicada y eliminarse. Estos contadores no se suman al indicador neto de celdas del dataset. Las eliminaciones manuales de excepciones permanecen separadas de las automáticas y se reflejan en el resumen general.
+
+El registro del análisis conserva cada regla, registro original, columna, antes/después, registro conservado o donante y, para fusiones, contactos coincidentes, parecido de nombre, umbral y columnas técnicas ignoradas. Las decisiones manuales también quedan registradas. Los contadores de la última ejecución no acumulan operaciones repetidas; el registro previo no se pierde al volver a limpiar.
+
+Repetir con la misma configuración produce cero modificaciones adicionales en un trabajo ya limpio. La descarga principal es la misma acción `GET .../export` de todo el trabajo: no vuelve a ejecutar reglas ni agrega columnas internas. Las reglas, planes y trazas se conservan solo en la sesión en memoria.
+
+### API y comprobación
+
+Bajo `/api/analyses/{analysis_id}`:
+
+| Acción | Método y ruta | Cuerpo / resultado |
+|---|---|---|
+| Sugerir configuración | `GET .../auto-cleanup/config` | `config` y avisos de asociaciones ambiguas |
+| Preparar ejecución | `POST .../auto-cleanup/preview` | `revision`, `column_rules`, `fields`, umbrales, `merge_clients`, `ignored_columns`; devuelve `plan_id`, contadores, eventos y grupos |
+| Aplicar plan seguro | `POST .../auto-cleanup/apply` | `plan_id`, `revision`; devuelve `{analysis, changed_values, deleted_rows}` |
+| Resolver excepción | `POST .../auto-cleanup/review` | `run_id`, `group_id`, `revision`, `action`; para `remove_selected`, `keep_row` y `remove_rows` |
+
+`analysis` incluye `automatic_report` y `automatic_audit`. Un plan reemplazado, aplicado o de otra revisión devuelve 409 con `stale_proposal`. Una asociación inválida, ciclo o decisión que eliminaría el registro conservado se rechaza sin aplicar cambios parciales.
+
+Desde `backend`, ejecutar `./.venv/Scripts/python.exe -m unittest discover -v`; desde `frontend`, ejecutar `npm run build`. Las pruebas de `backend/test_auto_cleanup.py` cubren duplicados reales, nombres parecidos de personas distintas, vacíos, identificadores y otros campos contradictorios, cadenas transitivas, original intacto, repetición, reglas inválidas, estabilidad de filas y el contrato HTTP completo.
+
+### Demostración reproducible
+
+1. Abrir **Ejemplo de limpieza automática** (`clientes_automatico_demo.csv`, datos ficticios).
+2. Comprobar las asociaciones `full_name`, `email`, `phone` y el identificador `document`.
+3. En reglas de `city`, agregar `BOGOTA` → `Bogotá`. Mantener recorte y reducción de espacios.
+4. Previsualizar y aplicar. En este archivo el resultado observado fue: una celda normalizada, una estandarizada, un exacto eliminado, un cliente absorbido y un teléfono completado; quedaron siete filas y tres grupos pendientes.
+5. Revisar Andrea, Carlos y Laura: contactos distintos, contactos vacíos o documentos contradictorios impiden su eliminación automática. Marcarlos como diferentes conserva todos.
+6. Previsualizar otra vez: en este recorrido no hubo cambios adicionales y se respetaron las tres decisiones. Descargar el CSV acumulado y compararlo con el archivo original de nueve registros.
+
+Las cantidades del ejemplo son resultados de esa ejecución, no constantes de interfaz. Evidencia y detalles: [docs/automatic-cleanup.md](docs/automatic-cleanup.md).
+
+### Límites específicos
+
+La regla es deliberadamente conservadora: un correo o teléfono compartido puede pertenecer a distintas personas y cualquier conflicto requiere revisión. No valida identidad, titularidad de contactos, direcciones ni documentos. Las asociaciones por encabezado son sugerencias editables, no inferencias semánticas. Se mantienen los límites de 2.000 filas y 10 MB, memoria de un único worker y exportación CSV. La inferencia de tipos de pandas al cargar sigue vigente; conviene revisar columnas como teléfonos e identificadores cuando el archivo usa formatos especiales o ceros iniciales. No se promete que los grupos de revisión correspondan a una entidad real.
