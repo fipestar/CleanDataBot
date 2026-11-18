@@ -91,10 +91,10 @@ class AutomaticCleanupTests(unittest.TestCase):
     def test_column_scope_canonical_chains_and_second_run_are_idempotent(self):
         self.state([self.base(full_name='BOGOTA', city='  BOGOTA '), self.base(full_name='Other', email=None, city='bogota', document='A-2')])
         rules = [{'column': 'city', 'replacements': [{'variant': 'BOGOTA', 'canonical': 'bogota'}, {'variant': 'bogota', 'canonical': '  Bogotá  '}]}]
-        _, first = self.run_cleanup(self.config(column_rules=rules))
+        _, first = self.run_cleanup(self.config(column_rules=rules, title_case_names=False))
         before = analyses['test']['frame'].copy(deep=True)
         revision = analyses['test']['revision']
-        second, report = self.run_cleanup(self.config(column_rules=rules))
+        second, report = self.run_cleanup(self.config(column_rules=rules, title_case_names=False))
         self.assertEqual(analyses['test']['frame'].loc[0, 'full_name'], 'BOGOTA')
         self.assertEqual(first['counts']['standardized_cells'], 2)
         self.assertEqual(report['counts']['duplicates_removed'], 0)
@@ -229,7 +229,7 @@ class AutomaticCleanupTests(unittest.TestCase):
         self.state([self.base(full_name='AAAA', email=None, document='1'), self.base(full_name='AAAB', email=None, document='2'), self.base(full_name='AABB', email=None, document='3')])
         _, report = self.run_cleanup(self.config(review_threshold=70))
         group = report['pending_groups'][0]
-        result = review_auto_exception('test', ExceptionDecision(revision=0, run_id=report['run_id'], group_id=group['id'], action='remove_selected', keep_row=1, remove_rows=[2]))
+        result = review_auto_exception('test', ExceptionDecision(revision=report['revision'], run_id=report['run_id'], group_id=group['id'], action='remove_selected', keep_row=1, remove_rows=[2]))
         self.assertEqual(result['analysis']['automatic_report']['pending_groups'], [])
         self.assertEqual(result['analysis']['automatic_report']['counts']['pending_groups'], 0)
         self.assertEqual(result['analysis']['preview_row_numbers'], [1, 3])
@@ -262,6 +262,28 @@ class AutomaticCleanupTests(unittest.TestCase):
 class AutomaticHttpTests(unittest.TestCase):
     def tearDown(self):
         analyses.clear()
+
+    def test_title_case_applies_only_to_the_mapped_name_column(self):
+        with TestClient(app) as client:
+            source = "full_name,nota\nMARÍA-JOSÉ pérez,MARÍA-JOSÉ pérez\n,Sin nombre\n"
+            upload = client.post('/api/analyze', files={'file': ('names.csv', source.encode(), 'text/csv')})
+            path = f"/api/analyses/{upload.json()['analysis_id']}"
+            config = client.get(f'{path}/auto-cleanup/config').json()['config']
+            self.assertEqual(config['fields']['name'], 'full_name')
+            self.assertTrue(config['title_case_names'])
+            plan = client.post(f'{path}/auto-cleanup/preview', json=config).json()
+            self.assertEqual(plan['counts']['names_title_cased'], 1)
+            result = client.post(f'{path}/auto-cleanup/apply', json={
+                'plan_id': plan['plan_id'], 'revision': plan['revision'],
+            })
+            self.assertEqual(result.status_code, 200)
+            current = pd.read_csv(io.BytesIO(client.get(f'{path}/export').content))
+            self.assertEqual(current.loc[0, 'full_name'], 'María-José Pérez')
+            self.assertEqual(current.loc[0, 'nota'], 'MARÍA-JOSÉ pérez')
+            self.assertTrue(pd.isna(current.loc[1, 'full_name']))
+            config['revision'] = result.json()['analysis']['revision']
+            repeated = client.post(f'{path}/auto-cleanup/preview', json=config).json()
+            self.assertEqual(repeated['counts']['names_title_cased'], 0)
 
     def test_http_upload_config_preview_apply_and_combined_export(self):
         with TestClient(app) as client:

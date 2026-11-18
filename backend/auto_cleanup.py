@@ -41,6 +41,7 @@ class FieldMapping(BaseModel):
 
 class AutoCleanupRequest(BaseModel):
     revision: int = Field(ge=0)
+    title_case_names: bool = True
     all_columns: bool = True
     normalize_dates: bool = True
     date_order: Literal["auto", "dmy", "mdy"] = "auto"
@@ -199,6 +200,7 @@ def plan_cleanup(frame: pd.DataFrame, request: AutoCleanupRequest, *, transform:
     counts.update({"dates_normalized": 0, "dates_skipped": 0})
     date_issues = []
     counts.update({"countries_normalized": 0, "countries_skipped": 0})
+    counts["names_title_cased"] = 0
     country_issues = []
 
     def event(rule, **details):
@@ -235,6 +237,16 @@ def plan_cleanup(frame: pd.DataFrame, request: AutoCleanupRequest, *, transform:
                 work.at[index, rule.column] = target
                 counts["standardized_cells"] += 1
                 event("canonical_variant", row=int(index) + 1, column=rule.column, before=normalized, after=target)
+    name_column = request.fields.name
+    if request.title_case_names and name_column is not None and not review_only:
+        for index, value in work[name_column].items():
+            if not isinstance(value, str):
+                continue
+            formatted = value.title()
+            if formatted != value:
+                work.at[index, name_column] = formatted
+                counts["names_title_cased"] += 1
+                event("title_case_name", row=int(index) + 1, column=name_column, before=value, after=formatted)
     if request.normalize_dates and not review_only:
         excluded = [request.fields.name, request.fields.email, request.fields.phone, *request.fields.identifiers, *request.ignored_columns]
         if request.normalize_countries:

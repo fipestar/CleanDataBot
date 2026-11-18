@@ -504,6 +504,7 @@ def auto_cleanup_config(analysis_id: str) -> dict[str, Any]:
                 for column in summary(analysis_id, state)["text_columns"]
             ]).model_dump()
         return {"config": {**configured, "revision": state["revision"], "all_columns": True,
+                           "title_case_names": configured.get("title_case_names", True),
                            "normalize_dates": configured.get("normalize_dates", True),
                            "date_order": configured.get("date_order", "auto"),
                            "normalize_countries": configured.get("normalize_countries", True),

@@ -3,6 +3,7 @@ import { ApplyResult, ModuleProps, get, post, valueText } from './api'
 import type { AutoConfig, AutoEvent, AutoPlan, AutoReport, ColumnRule } from './autoTypes'
 
 const ruleLabels: Record<string, string> = {
+  title_case_name: 'Aplicar formato título al nombre',
   normalize_country: 'Normalizar país con catálogo ISO', normalize_date: 'Normalizar fecha a ISO', normalize_text: 'Normalizar espacios', canonical_variant: 'Variante a canónico',
   exact_duplicate_before: 'Duplicado exacto inicial',
   exact_duplicate_after_standardization: 'Duplicado exacto tras estandarizar',
@@ -82,6 +83,7 @@ export default function AutomaticCleanup({ analysis, run, applied }: ModuleProps
             </select>
           </label>)}
         </div>
+        <label><input type="checkbox" checked={config.title_case_names} onChange={(event) => changeConfig({ title_case_names: event.target.checked })} /> Aplicar formato título a los nombres (Juan Pérez)</label>
         <fieldset className="cleanup-options"><legend>Identificadores del cliente: cualquier contradicción bloquea la fusión</legend>
           <div className="cleanup-columns">{analysis.columns.map((column) => <label key={column}><input type="checkbox" checked={config.fields.identifiers.includes(column)} disabled={[config.fields.name, config.fields.email, config.fields.phone].includes(column) || config.ignored_columns.includes(column)} onChange={(event) => changeConfig({ fields: { ...config.fields, identifiers: event.target.checked ? [...config.fields.identifiers, column] : config.fields.identifiers.filter((name) => name !== column) } })} />{column}</label>)}</div>
         </fieldset>
@@ -153,6 +155,7 @@ function AutoSummary({ report }: { report: AutoPlan | AutoReport }) {
       ['Campos vacíos completados', counts.filled_cells], ['Exactos eliminados', counts.exact_duplicates_removed],
       ['Clientes fusionados', counts.clients_merged], ['Fechas conservadas sin interpretar', counts.dates_skipped ?? 0],
       ['Países normalizados', counts.countries_normalized ?? 0], ['Países conservados sin reconocer', counts.countries_skipped ?? 0],
+      ['Nombres en formato título', counts.names_title_cased ?? 0],
     ].map(([label, count]) => <article className="metric-card" key={String(label)}><div className="metric-top">{label}</div><strong>{Number(count).toLocaleString('es-CO')}</strong></article>)}</div>
     <p className="section-copy">Los contadores describen pasos de esta ejecución; una celda puede normalizarse y luego estandarizarse. No se suman al contador neto de celdas del dataset. Puedes descargar el resultado acumulado desde la acción principal.</p>
     {report.warnings.map((warning) => <p role="status" className="alert" key={warning}>{warning}</p>)}

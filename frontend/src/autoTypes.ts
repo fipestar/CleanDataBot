@@ -6,6 +6,7 @@ export type ColumnRule = {
 }
 export type AutoFields = { name: string | null; email: string | null; phone: string | null; identifiers: string[] }
 export type AutoConfig = {
+  title_case_names: boolean
   all_columns: boolean; normalize_dates: boolean; date_order: 'auto' | 'dmy' | 'mdy'
   normalize_countries: boolean; country_format: 'es' | 'en' | 'iso2' | 'iso3'; country_columns: string[] | null
   revision: number; column_rules: ColumnRule[]; fields: AutoFields
@@ -32,6 +33,7 @@ export type AutoPlan = {
     previously_separated_groups: number
     dates_normalized?: number; dates_skipped?: number
     countries_normalized?: number; countries_skipped?: number
+    names_title_cased?: number
   }
 }
 export type AutoReport = AutoPlan & {
