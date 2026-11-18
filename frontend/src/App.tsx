@@ -43,10 +43,11 @@ export default function App() {
           <button className="button button-secondary" disabled={busy} onClick={() => loadExample('clientes_demo.csv')}>Ejemplo de 50 registros</button>
           <button className="button button-secondary" disabled={busy} onClick={() => loadExample('grupos_demo.csv')}>Ejemplo de grupos</button>
           <button className="button button-secondary" disabled={busy} onClick={() => loadExample('clientes_automatico_demo.csv')}>Ejemplo de limpieza automática</button>
+          <button className="button button-secondary" disabled={busy} onClick={() => loadExample('fechas_demo.csv')}>Ejemplo con fechas</button>
         </div></div>
       {busy && <p role="status">Analizando archivo…</p>}{error && <div className="alert alert-error" role="alert">{error}</div>}
     </section>}
-    <footer className="page-footer"><span>CleanDataBot · Demo de calidad de datos</span><span>Analizar → Revisar → Aplicar → Descargar</span></footer>
+    <footer className="page-footer"><span>CleanDataBot · Demo de calidad de datos</span><span>Cargar → Analizar → Limpiar → Descargar</span></footer>
   </main>
 }
 
@@ -81,7 +82,7 @@ function Workspace({ initial, changeFile }: { initial: Analysis; changeFile: () 
   function applied(result: ApplyResult) {
     setAnalysis(result.analysis)
     setEpoch((value) => value + 1)
-    setNotice(`Cambios aplicados: ${result.changed_values} celdas modificadas y ${result.deleted_rows} filas eliminadas. Los indicadores están actualizados. Se descartaron las propuestas anteriores; genera una nueva búsqueda para continuar.`)
+    setNotice(`Cambios aplicados: ${result.changed_values} celdas modificadas y ${result.deleted_rows} filas eliminadas. Los indicadores están actualizados. El dataset corregido está listo para descargar.`)
   }
   function download() {
     run(async (signal) => {
@@ -121,9 +122,11 @@ function Workspace({ initial, changeFile }: { initial: Analysis; changeFile: () 
         {rows.map((row, index) => <tr key={numbers[index]}><td>{numbers[index]}</td>{analysis.columns.map((name) => <td key={name}>{valueText(row[name])}</td>)}</tr>)}
         {rows.length === 0 && (emptyColumn === null || active) && <tr><td colSpan={analysis.column_count + 1}>No hay registros para mostrar.</td></tr>}
       </tbody></table></div>
+      <details className="match-panel"><summary>Herramientas manuales (opcional)</summary>
       <TextCleanup key={`cleanup:${moduleKey}`} analysis={analysis} run={run} applied={applied} />
       <DuplicateReview key={`duplicates:${moduleKey}`} analysis={analysis} run={run} applied={applied} />
       <SimilarityReview key={`similarity:${moduleKey}`} analysis={analysis} run={run} applied={applied} />
+      </details>
       {analysis.equivalences.length > 0 && <details className="match-panel"><summary>Equivalencias aprobadas durante este análisis ({analysis.equivalences.length})</summary><ul>{analysis.equivalences.map((rule, index) => <li key={index}>{rule.column}: {rule.variants.map(valueText).join(', ')} → {valueText(rule.canonical)} ({rule.changed_values} celdas en esa operación)</li>)}</ul></details>}
     </fieldset>
   </section>

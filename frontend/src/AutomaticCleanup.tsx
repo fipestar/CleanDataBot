@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { ApplyResult, ModuleProps, get, post, valueText } from './api'
-import type { AutoConfig, AutoEvent, AutoPlan, AutoReport, ColumnRule, PendingGroup } from './autoTypes'
+import type { AutoConfig, AutoEvent, AutoPlan, AutoReport, ColumnRule } from './autoTypes'
 
 const ruleLabels: Record<string, string> = {
-  normalize_text: 'Normalizar espacios', canonical_variant: 'Variante a canónico',
+  normalize_date: 'Normalizar fecha a ISO', normalize_text: 'Normalizar espacios', canonical_variant: 'Variante a canónico',
   exact_duplicate_before: 'Duplicado exacto inicial',
   exact_duplicate_after_standardization: 'Duplicado exacto tras estandarizar',
   exact_duplicate_after_merge: 'Duplicado exacto tras completar campos',
@@ -41,7 +41,7 @@ export default function AutomaticCleanup({ analysis, run, applied }: ModuleProps
     if (!config) return
     setPreview(null)
     run(async (signal) => {
-      const result = await post<AutoPlan>(analysis.analysis_id, 'auto-cleanup/preview', { ...config, revision: analysis.revision }, signal)
+      const result = await post<AutoPlan>(analysis.analysis_id, 'auto-cleanup/preview', { ...config, all_columns: true, revision: analysis.revision }, signal)
       if (!signal.aborted) setPreview(result)
     })
   }
@@ -52,26 +52,26 @@ export default function AutomaticCleanup({ analysis, run, applied }: ModuleProps
       if (!signal.aborted) { setPreview(null); applied(result) }
     })
   }
-  function decide(group: PendingGroup, action: 'keep_all' | 'remove_selected', keepRow?: number, removeRows: number[] = []) {
-    if (!report) return
+  function cleanAll() {
+    if (!config) return
+    setPreview(null)
     run(async (signal) => {
-      const result = await post<ApplyResult>(analysis.analysis_id, 'auto-cleanup/review', {
-        revision: analysis.revision, run_id: report.run_id, group_id: group.id,
-        action, keep_row: keepRow ?? null, remove_rows: removeRows,
-      }, signal)
-      if (!signal.aborted) { setPreview(null); applied(result) }
+      const plan = await post<AutoPlan>(analysis.analysis_id, 'auto-cleanup/preview', { ...config, all_columns: true, revision: analysis.revision }, signal)
+      if (signal.aborted) return
+      const result = await post<ApplyResult>(analysis.analysis_id, 'auto-cleanup/apply', { plan_id: plan.plan_id, revision: plan.revision }, signal)
+      if (!signal.aborted) applied(result)
     })
   }
   const mapped = config ? [config.fields.name, config.fields.email, config.fields.phone, ...config.fields.identifiers].filter(Boolean) : []
   return <section className="match-panel automatic-panel" aria-labelledby="automatic-heading">
     <div className="step-label">LIMPIEZA AUTOMÁTICA</div>
-    <h3 id="automatic-heading">Limpiar automáticamente y revisar solo las excepciones</h3>
-    <p className="section-copy">Revisa las reglas una vez: se aplican al trabajo acumulado y el archivo original se conserva. Se eliminan duplicados exactos antes y después de estandarizar. Los demás clientes requieren nombre muy similar y correo o teléfono exacto no vacío, sin campos contradictorios.</p>
+    <h3 id="automatic-heading">Limpiar todas las columnas automáticamente</h3>
+    <p className="section-copy">Se limpian espacios en todas las columnas de texto, se aplican los canónicos configurados y se normalizan las fechas reconocibles. Se eliminan duplicados exactos y solo se fusionan clientes con evidencia suficiente. Los casos dudosos se conservan sin solicitar revisión por grupos. El original permanece intacto.</p>
     {loadError && <div className="alert alert-error" role="alert">{loadError} <button className="text-button" onClick={() => setRetry((current) => current + 1)}>Reintentar cargar configuración</button></div>}
     {!config && !loadError && <p role="status">Cargando asociaciones de columnas…</p>}
     {config && <form onSubmit={(event) => { event.preventDefault(); generatePreview() }}>
-      <details className="automatic-settings" open>
-        <summary>Asociar campos y configurar reglas</summary>
+      <details className="automatic-settings">
+        <summary>Opciones de fechas, asociaciones y valores canónicos</summary>
         {suggestionWarnings.map((warning) => <p className="section-copy" key={warning}>{warning}</p>)}
         <div className="automatic-mappings">
           {(['name', 'email', 'phone'] as const).map((role) => <label className="control-group" key={role}>
@@ -89,45 +89,43 @@ export default function AutomaticCleanup({ analysis, run, applied }: ModuleProps
         <div className="automatic-mappings">
           <label className="control-group"><span><input type="checkbox" checked={config.merge_clients} onChange={(event) => changeConfig({ merge_clients: event.target.checked })} /> Resolver clientes con evidencia suficiente</span></label>
           <label className="control-group"><span>Parecido mínimo de nombre para fusión (%)</span><input type="number" min="90" max="100" step="0.1" required value={config.name_threshold} onChange={(event) => changeConfig({ name_threshold: Number(event.target.value) })} /></label>
-          <label className="control-group"><span>Parecido de nombre para revisión (%)</span><input type="number" min="60" max={config.name_threshold} step="0.1" required value={config.review_threshold} onChange={(event) => changeConfig({ review_threshold: Number(event.target.value) })} /></label>
         </div>
-        <p className="section-copy">Los porcentajes son parecido textual, no probabilidad de identidad. Correo y teléfono se comparan exactamente tras quitar espacios exteriores; dos vacíos nunca son evidencia. Cualquier otro campo no vacío distinto también envía el caso a revisión.</p>
+        <p className="section-copy">Los porcentajes son parecido textual, no probabilidad de identidad. Correo y teléfono se comparan exactamente tras quitar espacios exteriores; dos vacíos nunca son evidencia. Cualquier otro campo no vacío distinto bloquea la fusión y conserva los registros.</p>
         <details><summary>Columnas técnicas que pueden diferir sin bloquear (opcional)</summary><p className="section-copy">Solo para datos que sabes que no identifican al cliente, por ejemplo un número interno de fila. Se conserva su valor en el primer registro. No permite ignorar campos asociados a nombre, contacto o identificadores.</p>
           <div className="cleanup-columns">{analysis.columns.map((column) => <label key={column}><input type="checkbox" checked={config.ignored_columns.includes(column)} disabled={mapped.includes(column)} onChange={(event) => changeConfig({ ignored_columns: event.target.checked ? [...config.ignored_columns, column] : config.ignored_columns.filter((name) => name !== column) })} />{column}</label>)}</div>
         </details>
-        <h4>Normalización y valores canónicos por columna</h4>
+        <h4>Fechas</h4>
+        <label><input type="checkbox" checked={config.normalize_dates} onChange={(event) => changeConfig({ normalize_dates: event.target.checked })} /> Normalizar fechas reconocibles a ISO 8601</label>
+        <label className="control-group"><span>Orden de fechas con el año al final</span><select value={config.date_order} onChange={(event) => changeConfig({ date_order: event.target.value as AutoConfig['date_order'] })}>
+          <option value="auto">Automático: conservar fechas ambiguas</option><option value="dmy">Día / mes / año</option><option value="mdy">Mes / día / año</option>
+        </select></label>
+        <p className="section-copy">Salida: AAAA-MM-DD. Se conservan horas y zonas horarias si existen. En automático, 03/04/2026 se conserva hasta elegir un orden. Los números y códigos no se interpretan como fechas.</p>
+        <h4>Valores canónicos por columna</h4>
         <p className="section-copy">Los reemplazos son explícitos y solo afectan esta columna. Se incorporan inicialmente las equivalencias ya aprobadas en este análisis. No se inventan valores canónicos por parecido difuso.</p>
-        <div className="automatic-column-rules">{analysis.text_columns.map((column) => <ColumnOptions key={column} column={column} rule={config.column_rules.find((rule) => rule.column === column) ?? null} change={(rule) => changeRule(column, rule)} />)}</div>
+        <div className="automatic-column-rules">{analysis.text_columns.map((column) => <ColumnOptions key={column} column={column} rule={config.column_rules.find((rule) => rule.column === column) ?? { column, trim: true, collapse_spaces: true, replacements: [] }} change={(rule) => changeRule(column, rule)} />)}</div>
       </details>
-      <button className="button button-primary" type="submit">Previsualizar limpieza automática</button>
+      <div className="upload-actions"><button className="button button-primary" type="button" onClick={cleanAll}>Limpiar automáticamente todas las columnas</button>
+        <button className="button button-secondary" type="submit">Previsualizar cambios (opcional)</button></div>
     </form>}
     {activePreview && <div className="automatic-preview">
       <h4>Resultado propuesto sobre el trabajo actual</h4>
       <AutoSummary report={activePreview} />
       <AuditTrail title="Cambios propuestos y reglas" events={activePreview.events} />
-      <p className="section-copy">Al aplicar se ejecutan los casos seguros del plan. Los grupos pendientes conservan sus registros para revisión. Se conserva el primer registro por orden original y solo se completan sus campos vacíos con datos compatibles.</p>
+      <p className="section-copy">Al aplicar se ejecutan todos los cambios seguros del plan. Los registros dudosos se conservan sin fusionarlos. Se conserva el primer registro por orden original y solo se completan sus campos vacíos con datos compatibles.</p>
       <button className="button button-dark" onClick={apply}>Aplicar limpieza automática</button>
     </div>}
     {report && <div className="automatic-result">
       <h4>Última ejecución aplicada</h4>
       <AutoSummary report={report} />
-      {!report.is_current && <p role="status" className="alert alert-error">El trabajo cambió después de esta ejecución. Estos resultados son históricos: genera una nueva limpieza para revisar excepciones vigentes.</p>}
-      {report.is_current && <>
-        <h4>Excepciones agrupadas para revisión</h4>
-        <p className="section-copy">Cada registro aparece una vez, dentro de un grupo de candidatos. Una conexión transitiva no demuestra que todos sean la misma persona. Revisa los valores y selecciona únicamente las filas que decidas eliminar. La eliminación manual no completa ni sobrescribe campos.</p>
-        {!report.pending_groups.length && <p role="status">No hay grupos pendientes de esta ejecución.</p>}
-        <div className="duplicate-list">{report.pending_groups.map((group) => <ExceptionGroup key={`${report.run_id}:${group.id}`} group={group} columns={analysis.columns} decide={(action, keepRow, removeRows) => decide(group, action, keepRow, removeRows)} />)}</div>
-      </>}
+      {!report.is_current && <p role="status" className="alert alert-error">El trabajo cambió después de esta ejecución. Estos resultados son históricos: ejecuta la limpieza para actualizar el resultado.</p>}
     </div>}
     {!!analysis.automatic_audit.length && <AuditTrail title="Registro de cambios automáticos y decisiones del análisis" events={analysis.automatic_audit} />}
   </section>
 }
 
 function ColumnOptions({ column, rule, change }: { column: string; rule: ColumnRule | null; change: (rule: ColumnRule | null) => void }) {
-  return <details className="automatic-column"><summary>{column}{rule ? ' · reglas activas' : ' · sin reglas'}</summary>
-    <label><input type="checkbox" checked={rule !== null} onChange={(event) => change(event.target.checked ? { column, trim: true, collapse_spaces: true, replacements: [] } : null)} />Configurar {column}</label>
+  return <details className="automatic-column"><summary>{column} · valores canónicos</summary>
     {rule && <>
-      <div className="cleanup-columns"><label><input type="checkbox" checked={rule.trim} onChange={(event) => change({ ...rule, trim: event.target.checked })} />Recortar extremos en {column}</label><label><input type="checkbox" checked={rule.collapse_spaces} onChange={(event) => change({ ...rule, collapse_spaces: event.target.checked })} />Reducir espacios en {column}</label></div>
       <div className="table-wrap"><table aria-label={`Reemplazos automáticos de ${column}`}><thead><tr><th>Variante exacta</th><th>Valor canónico</th><th>Acción</th></tr></thead><tbody>
         {rule.replacements.map((replacement, index) => <tr key={index}><td><input type="text" aria-label={`Variante ${index + 1} de ${column}`} value={replacement.variant} required onChange={(event) => change({ ...rule, replacements: rule.replacements.map((value, position) => position === index ? { ...value, variant: event.target.value } : value) })} /></td><td><input type="text" aria-label={`Canónico ${index + 1} de ${column}`} value={replacement.canonical} required onChange={(event) => change({ ...rule, replacements: rule.replacements.map((value, position) => position === index ? { ...value, canonical: event.target.value } : value) })} /></td><td><button className="text-button" type="button" onClick={() => change({ ...rule, replacements: rule.replacements.filter((_, position) => position !== index) })}>Quitar reemplazo</button></td></tr>)}
         {!rule.replacements.length && <tr><td colSpan={3}>No hay reemplazos configurados en esta columna.</td></tr>}
@@ -142,29 +140,14 @@ function AutoSummary({ report }: { report: AutoPlan | AutoReport }) {
   return <>
     <div className="metrics-grid automatic-metrics">{[
       ['Celdas normalizadas', counts.normalized_cells], ['Variantes estandarizadas (celdas)', counts.standardized_cells],
-      ['Duplicados eliminados', counts.duplicates_removed], ['Grupos pendientes', counts.pending_groups],
+      ['Duplicados eliminados', counts.duplicates_removed], ['Fechas normalizadas', counts.dates_normalized ?? 0],
       ['Campos vacíos completados', counts.filled_cells], ['Exactos eliminados', counts.exact_duplicates_removed],
-      ['Clientes fusionados', counts.clients_merged], ['Grupos conservados por decisión previa', counts.previously_separated_groups],
+      ['Clientes fusionados', counts.clients_merged], ['Fechas conservadas sin interpretar', counts.dates_skipped ?? 0],
     ].map(([label, count]) => <article className="metric-card" key={String(label)}><div className="metric-top">{label}</div><strong>{Number(count).toLocaleString('es-CO')}</strong></article>)}</div>
-    <p className="section-copy">Los contadores describen pasos de esta ejecución; una celda puede normalizarse y luego estandarizarse. No se suman al contador neto de celdas del dataset. Las eliminaciones manuales de excepciones se contabilizan aparte en el estado actual.</p>
+    <p className="section-copy">Los contadores describen pasos de esta ejecución; una celda puede normalizarse y luego estandarizarse. No se suman al contador neto de celdas del dataset. Puedes descargar el resultado acumulado desde la acción principal.</p>
     {report.warnings.map((warning) => <p role="status" className="alert" key={warning}>{warning}</p>)}
+    {!!report.date_issues?.length && <details><summary>Fechas conservadas sin interpretar</summary><ul>{report.date_issues.map((issue) => <li key={`${issue.column}:${issue.row}`}>Registro {issue.row}, {issue.column}: {valueText(issue.value)}. {issue.reason}</li>)}</ul></details>}
   </>
-}
-
-function ExceptionGroup({ group, columns, decide }: { group: PendingGroup; columns: string[]; decide: (action: 'keep_all' | 'remove_selected', keepRow?: number, removeRows?: number[]) => void }) {
-  const [keeper, setKeeper] = useState(group.records[0].row)
-  const [remove, setRemove] = useState<number[]>([])
-  return <article className="duplicate-pair" aria-label={`Excepción con registros ${group.records.map((row) => row.row).join(', ')}`}>
-    <h4>{group.records.length} registros pendientes: {group.records.map((row) => row.row).join(', ')}</h4>
-    <ul>{group.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
-    <div className="table-wrap"><table aria-label="Registros de la excepción"><thead><tr><th>Eliminar al confirmar</th><th>Registro original</th>{columns.map((column) => <th key={column}>{column}{group.conflicting_columns.includes(column) && <small>Valores contradictorios</small>}</th>)}</tr></thead><tbody>
-      {group.records.map((record) => <tr key={record.row}><td><input type="checkbox" aria-label={`Eliminar registro ${record.row} de esta excepción`} disabled={keeper === record.row} checked={remove.includes(record.row)} onChange={(event) => setRemove((current) => event.target.checked ? [...current, record.row] : current.filter((row) => row !== record.row))} /></td><td>{record.row}</td>{columns.map((column) => <td key={column} className={group.conflicting_columns.includes(column) ? 'automatic-conflict' : ''}><code className="cleanup-value">{valueText(record.values[column])}</code></td>)}</tr>)}
-    </tbody></table></div>
-    <div className="duplicate-decisions"><label className="control-group"><span>Registro que debe conservarse</span><select value={keeper} onChange={(event) => { const next = Number(event.target.value); setKeeper(next); setRemove((current) => current.filter((row) => row !== next)) }}>{group.records.map((row) => <option key={row.row} value={row.row}>Registro {row.row}</option>)}</select></label>
-      <button className="button button-secondary" onClick={() => decide('keep_all')}>Son diferentes: conservar todos</button>
-      <button className="button button-dark" disabled={!remove.length} onClick={() => decide('remove_selected', keeper, remove)}>Confirmar eliminación de {remove.length} registros seleccionados</button>
-    </div>
-  </article>
 }
 
 function AuditTrail({ title, events }: { title: string; events: AutoEvent[] }) {

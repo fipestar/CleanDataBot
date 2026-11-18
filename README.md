@@ -138,12 +138,12 @@ Guion breve: “Cargamos y vemos problemas reales. Revisamos el antes y después
 
 ## Limpieza automática
 
-La sección **Limpieza automática** permite completar cargar → analizar → configurar reglas → previsualizar → aplicar los casos seguros → revisar excepciones → descargar. Reutiliza la versión de trabajo, `clean_text`, la comparación textual, las revisiones y el `commit` atómico existentes. Los módulos manuales siguen disponibles y sus cambios se acumulan con esta limpieza en el CSV principal.
+La sección **Limpieza automática** permite completar cargar → analizar → **Limpiar automáticamente todas las columnas** → descargar. La previsualización es opcional. La revisión por grupos está oculta por el momento y los candidatos dudosos se conservan sin fusionar. Reutiliza la versión de trabajo, `clean_text`, la comparación textual, las revisiones y el `commit` atómico existentes. Los módulos manuales siguen disponibles y sus cambios se acumulan con esta limpieza en el CSV principal.
 
 ### Configuración por archivo
 
 - **Asociar campos:** seleccionar las columnas de nombre, correo y teléfono, y marcar los identificadores del cliente. Se sugieren encabezados conocidos como `full_name`, `nombre completo`, `email`, `correo`, `phone`, `document` o `customer_id`. Las asociaciones ambiguas quedan sin seleccionar y muestran un aviso.
-- **Columnas de texto:** activar o desactivar recorte de extremos, reducción de espacios repetidos y reemplazos explícitos variante → canónico. La configuración inicial incorpora las equivalencias ya aprobadas en el análisis. No se elige un canónico por fuzzy matching sin una regla configurada.
+- **Todas las columnas compatibles:** se recortan extremos y se reducen espacios repetidos en todas las columnas de texto; los números no se convierten a texto. Los reemplazos explícitos variante → canónico siguen limitados a su columna. La configuración inicial incorpora las equivalencias ya aprobadas en el análisis. No se elige un canónico por fuzzy matching sin una regla configurada.
 - **Umbrales:** 97 % de parecido de nombre para fusión automática por defecto, configurable entre 90 y 100; 85 % para presentar candidatos de revisión, configurable entre 60 y el umbral automático. Son medidas de parecido textual, no probabilidades de identidad.
 - **Columnas técnicas opcionales:** un ID interno distinto bloquea la fusión por defecto, igual que cualquier otro campo no vacío contradictorio. Solo puede ignorarse explícitamente si el usuario sabe que no identifica al cliente. No se pueden ignorar columnas asociadas a nombre, contacto o identificadores. En columnas ignoradas se conserva el valor de la primera fila y no se completan campos desde otras filas.
 
@@ -161,11 +161,13 @@ Si falta nombre o no se ha asociado correo ni teléfono, se omite la fusión de 
 
 Los conflictos de un grupo bloquean toda su fusión automática: no se completan unos campos para luego descubrir un conflicto en otro miembro. La operación se prepara en una copia y se publica únicamente si todas las validaciones y métricas terminan correctamente. El original permanece intacto.
 
-### Excepciones agrupadas
+### Motor de excepciones (vista oculta actualmente)
+
+La interfaz actual no muestra grupos pendientes ni exige resolverlos para descargar. Las herramientas manuales están plegadas en una sección opcional. El motor conserva los controles y las rutas de revisión para poder recuperarlos posteriormente; ocultar la vista no autoriza nuevas eliminaciones.
 
 Después de aplicar aparecen grupos de candidatos, no cientos de pares repetidos. Los vínculos de nombre o contacto pueden conectar varios registros para **presentarlos juntos**, pero esa conexión no declara que sean una sola entidad y nunca autoriza una fusión automática. Cada registro aparece en un único grupo pendiente.
 
-La vista muestra todos los campos, motivos y columnas contradictorias. Se puede:
+El contrato de revisión conservado en el backend admite:
 
 - Elegir **Son diferentes: conservar todos**. La decisión se registra y se respeta en ejecuciones posteriores mientras esos registros conserven los mismos valores.
 - Elegir una fila que debe conservarse, marcar únicamente las filas que se desea eliminar y confirmar esa eliminación. Los registros no seleccionados permanecen; no se copian ni sobrescriben campos en esta eliminación manual.
@@ -209,11 +211,36 @@ Desde `backend`, ejecutar `./.venv/Scripts/python.exe -m unittest discover -v`; 
 2. Comprobar las asociaciones `full_name`, `email`, `phone` y el identificador `document`.
 3. En reglas de `city`, agregar `BOGOTA` → `Bogotá`. Mantener recorte y reducción de espacios.
 4. Previsualizar y aplicar. En este archivo el resultado observado fue: una celda normalizada, una estandarizada, un exacto eliminado, un cliente absorbido y un teléfono completado; quedaron siete filas y tres grupos pendientes.
-5. Revisar Andrea, Carlos y Laura: contactos distintos, contactos vacíos o documentos contradictorios impiden su eliminación automática. Marcarlos como diferentes conserva todos.
-6. Previsualizar otra vez: en este recorrido no hubo cambios adicionales y se respetaron las tres decisiones. Descargar el CSV acumulado y compararlo con el archivo original de nueve registros.
+5. Los contactos distintos, vacíos o documentos contradictorios de Andrea, Carlos y Laura bloquean su eliminación automática. Esas filas se conservan y no aparecen grupos pendientes en pantalla.
+6. Ejecutar otra vez: no habrá cambios adicionales con la misma configuración. Descargar el CSV acumulado y compararlo con el original de nueve registros. El informe enlazado conserva también la evidencia histórica de la versión anterior con revisión visible.
 
 Las cantidades del ejemplo son resultados de esa ejecución, no constantes de interfaz. Evidencia y detalles: [docs/automatic-cleanup.md](docs/automatic-cleanup.md).
 
 ### Límites específicos
 
 La regla es deliberadamente conservadora: un correo o teléfono compartido puede pertenecer a distintas personas y cualquier conflicto requiere revisión. No valida identidad, titularidad de contactos, direcciones ni documentos. Las asociaciones por encabezado son sugerencias editables, no inferencias semánticas. Se mantienen los límites de 2.000 filas y 10 MB, memoria de un único worker y exportación CSV. La inferencia de tipos de pandas al cargar sigue vigente; conviene revisar columnas como teléfonos e identificadores cuando el archivo usa formatos especiales o ceros iniciales. No se promete que los grupos de revisión correspondan a una entidad real.
+
+
+## Limpieza global y formatos de fecha — actualización del 18 de noviembre
+
+La acción principal **Limpiar automáticamente todas las columnas** prepara y aplica todos los cambios seguros de una sola vez sobre el trabajo vigente. Conserva el original, la trazabilidad y el CSV acumulado. No requiere aprobar grupos de candidatos. La previsualización y las herramientas manuales siguen disponibles como opciones secundarias.
+
+Se aplica el recorte y la reducción de espacios a todas las columnas de texto, aunque no figuraran en una configuración guardada previamente. Los canónicos continúan siendo los configurados o aprobados; no se inventan equivalencias por similitud ni se fuerzan fusiones por nombre. Los valores numéricos e identificadores conservan su tipo y contenido.
+
+**Fechas:** la normalización está activada por defecto. Se detectan columnas con encabezados de fecha (`fecha`, `fecha_ingreso`, `date`, `birth_date`, etc.), tipos de fecha reales de Excel y columnas cuyo contenido completo cumple un formato de fecha estricto. Se excluyen columnas asociadas a nombre/contactos/identificadores, columnas técnicas ignoradas y encabezados de códigos, teléfonos, documentos y cuentas.
+
+- Fechas válidas con año de cuatro dígitos: salida ISO `AAAA-MM-DD`; admite separadores `/`, `-` y `.`.
+- Año al inicio es inequívoco: `2026/11/18` → `2026-11-18`.
+- En orden **Automático**, `18/11/2026` y `11/18/2026` son interpretables y se convierten. `03/04/2026` se conserva porque puede representar dos días diferentes. `03/03/2026` sí es inequívoca.
+- En **Opciones de fechas, asociaciones y valores canónicos** puede elegirse **Día / mes / año** o **Mes / día / año**. Con la primera opción, `03/04/2026` pasa a `2026-04-03`; con la segunda, a `2026-03-04`.
+- Los valores inválidos, años de dos dígitos, texto libre y números de serie Excel sin tipo de fecha se conservan y se informa la omisión. No se infieren siglos ni se corrigen días imposibles.
+- Las horas, fracciones de segundo y zonas horarias se conservan en ISO 8601. No se cambia de zona ni se recorta un datetime a solo fecha. `18/11/2026 14:30:15` → `2026-11-18T14:30:15`.
+- El resumen muestra **Fechas normalizadas** y **Fechas conservadas sin interpretar**, con detalles de fila, columna y motivo. Cada conversión figura como regla `normalize_date` en la auditoría. Repetir con el mismo orden no vuelve a modificar fechas ya normalizadas.
+
+El ejemplo **Ejemplo con fechas** carga `frontend/public/fechas_demo.csv`: permite comprobar formatos mixtos, una fecha ambigua, una inválida, hora con zona y un código con apariencia de fecha que debe conservarse. Tras limpiar en modo automático, elegir día/mes y volver a limpiar resuelve únicamente la fecha ambigua; la inválida sigue intacta.
+
+El contrato de configuración añade `all_columns` (predeterminado `true`), `normalize_dates` (predeterminado `true`) y `date_order` (`auto`, `dmy` o `mdy`). Los contadores incorporan `dates_normalized` y `dates_skipped`; el informe contiene `date_issues`. La interfaz siempre solicita limpieza global. La API permite `all_columns=false` para integraciones que necesiten reglas explícitas por columna.
+
+Verificación: ejecutar `python -m unittest discover -v` desde backend y `npm run build` desde frontend. `backend/test_dates.py` cubre formatos, ambigüedad, fechas inválidas, horas y zonas, fechas de Excel, identificadores, limpieza global, repetición, originales intactos y contrato HTTP.
+
+Verificación de esta actualización: **71 pruebas aprobadas** (`unittest`, 0,806 s en la última ejecución) y build TypeScript/Vite correcto. En el navegador se comprobó el botón directo, cero elementos «Grupos pendientes», cuatro fechas normalizadas en modo automático y la conversión de la fecha ambigua al elegir día/mes. Se abrió el CSV descargado y se verificaron hora/zona, fecha inválida preservada y código sin convertir. La consola del navegador no registró errores ni avisos durante el recorrido. [Captura del resultado](docs/global-cleanup-dates.jpg).

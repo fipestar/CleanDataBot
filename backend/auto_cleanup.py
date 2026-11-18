@@ -11,6 +11,7 @@ from typing import Any, Callable, Literal
 import pandas as pd
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, model_validator
+from date_normalization import date_columns, normalize_date
 
 
 class Replacement(BaseModel):
@@ -39,6 +40,9 @@ class FieldMapping(BaseModel):
 
 class AutoCleanupRequest(BaseModel):
     revision: int = Field(ge=0)
+    all_columns: bool = True
+    normalize_dates: bool = True
+    date_order: Literal["auto", "dmy", "mdy"] = "auto"
     column_rules: list[ColumnRule] = Field(default_factory=list)
     fields: FieldMapping = Field(default_factory=FieldMapping)
     merge_clients: bool = True
@@ -170,12 +174,21 @@ class Components:
 
 def plan_cleanup(frame: pd.DataFrame, request: AutoCleanupRequest, *, transform: Callable,
                  normalize: Callable, similarity: Callable, separations=None, review_only=False):
+    if request.all_columns:
+        configured = {rule.column: rule for rule in request.column_rules}
+        # Validate user column references before expanding the global rules.
+        validate_config(frame, request, transform)
+        rules = [configured.get(column, ColumnRule(column=column)).model_copy(update={"trim": True, "collapse_spaces": True})
+                 for column in frame.columns if pd.api.types.is_object_dtype(frame[column]) or pd.api.types.is_string_dtype(frame[column])]
+        request = request.model_copy(update={"column_rules": rules})
     replacements = validate_config(frame, request, transform)
     work = frame.copy(deep=True)
     events, warnings = [], []
     counts = {"normalized_cells": 0, "standardized_cells": 0, "exact_duplicates_removed": 0,
               "clients_merged": 0, "filled_cells": 0, "duplicates_removed": 0, "pending_groups": 0,
               "previously_separated_groups": 0}
+    counts.update({"dates_normalized": 0, "dates_skipped": 0})
+    date_issues = []
 
     def event(rule, **details):
         events.append({"rule": rule, **details})
@@ -211,6 +224,23 @@ def plan_cleanup(frame: pd.DataFrame, request: AutoCleanupRequest, *, transform:
                 work.at[index, rule.column] = target
                 counts["standardized_cells"] += 1
                 event("canonical_variant", row=int(index) + 1, column=rule.column, before=normalized, after=target)
+    if request.normalize_dates and not review_only:
+        excluded = [request.fields.name, request.fields.email, request.fields.phone, *request.fields.identifiers, *request.ignored_columns]
+        for column in date_columns(work, normalize, excluded=excluded):
+            if pd.api.types.is_datetime64_any_dtype(work[column]):
+                work[column] = work[column].astype(object)
+            for index, value in work[column].items():
+                normalized, reason = normalize_date(value, request.date_order)
+                if reason:
+                    counts["dates_skipped"] += 1
+                    date_issues.append({"row": int(index) + 1, "column": column, "value": safe(value), "reason": reason})
+                elif not empty(value) and (not isinstance(value, str) or normalized != value):
+                    work.at[index, column] = normalized
+                    counts["dates_normalized"] += 1
+                    event("normalize_date", row=int(index) + 1, column=column, before=safe(value), after=normalized,
+                          options={"date_order": request.date_order, "output": "ISO 8601"})
+    if date_issues:
+        warnings.append(f"Se conservaron {len(date_issues)} fechas ambiguas, inválidas o no reconocidas. Revisa el orden día/mes si corresponde.")
     if not review_only:
         deduplicate("exact_duplicate_after_standardization")
 
@@ -344,4 +374,4 @@ def plan_cleanup(frame: pd.DataFrame, request: AutoCleanupRequest, *, transform:
     counts["pending_groups"] = len(pending_groups)
     counts["duplicates_removed"] = counts["exact_duplicates_removed"] + counts["clients_merged"]
     return work, {"counts": counts, "warnings": warnings, "fields": fields.model_dump(),
-                  "events": events, "pending_groups": pending_groups}
+                  "events": events, "pending_groups": pending_groups, "date_issues": date_issues}

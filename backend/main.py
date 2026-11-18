@@ -502,7 +502,9 @@ def auto_cleanup_config(analysis_id: str) -> dict[str, Any]:
                     for variant, canonical in replacements.get(column, {}).items() if variant != canonical])
                 for column in summary(analysis_id, state)["text_columns"]
             ]).model_dump()
-        return {"config": {**configured, "revision": state["revision"]}, "warnings": warnings}
+        return {"config": {**configured, "revision": state["revision"], "all_columns": True,
+                           "normalize_dates": configured.get("normalize_dates", True),
+                           "date_order": configured.get("date_order", "auto")}, "warnings": warnings}
 
 
 def check_revision(state, revision):

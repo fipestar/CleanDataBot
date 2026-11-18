@@ -1,0 +1,7 @@
+nombre,email,fecha_ingreso,ciudad,codigo
+" Ana  Pérez ",ana@example.com,18/11/2026," Bogotá ",2026/11/18
+Luis Rojas,luis@example.com,2026/11/19,Cali,A002
+Marta Ruiz,marta@example.com,03/04/2026,Tunja,A003
+Pedro Díaz,pedro@example.com,31/02/2026,Pasto,A004
+Nora Castro,nora@example.com,2026-11-18T14:30-05:00,Bogotá,A005
+Sara Gómez,sara@example.com,11/18/2026,Medellín,A006
