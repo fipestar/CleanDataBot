@@ -12,6 +12,7 @@ import pandas as pd
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, model_validator
 from date_normalization import date_columns, normalize_date
+from country_normalization import country_columns, normalize_country
 
 
 class Replacement(BaseModel):
@@ -43,6 +44,9 @@ class AutoCleanupRequest(BaseModel):
     all_columns: bool = True
     normalize_dates: bool = True
     date_order: Literal["auto", "dmy", "mdy"] = "auto"
+    normalize_countries: bool = True
+    country_format: Literal["es", "en", "iso2", "iso3"] = "es"
+    country_columns: list[str] | None = None
     column_rules: list[ColumnRule] = Field(default_factory=list)
     fields: FieldMapping = Field(default_factory=FieldMapping)
     merge_clients: bool = True
@@ -125,6 +129,11 @@ def validate_config(frame, request, transform):
         raise HTTPException(400, "Configura cada columna una sola vez.")
     if not set(roles + configured + request.ignored_columns).issubset(frame.columns):
         raise HTTPException(400, "La configuración contiene columnas que no existen en el archivo.")
+    if request.country_columns is not None:
+        if not set(request.country_columns).issubset(frame.columns):
+            raise HTTPException(400, "La selección de países contiene columnas que no existen.")
+        if set(request.country_columns) & set(roles + request.ignored_columns):
+            raise HTTPException(400, "Una columna asociada a identidad, contacto o datos técnicos no puede normalizarse como país.")
     if set(roles) & set(request.ignored_columns):
         raise HTTPException(400, "No puedes ignorar un campo asociado a nombre, contacto o identificador.")
     replacements = {}
@@ -189,6 +198,8 @@ def plan_cleanup(frame: pd.DataFrame, request: AutoCleanupRequest, *, transform:
               "previously_separated_groups": 0}
     counts.update({"dates_normalized": 0, "dates_skipped": 0})
     date_issues = []
+    counts.update({"countries_normalized": 0, "countries_skipped": 0})
+    country_issues = []
 
     def event(rule, **details):
         events.append({"rule": rule, **details})
@@ -226,6 +237,8 @@ def plan_cleanup(frame: pd.DataFrame, request: AutoCleanupRequest, *, transform:
                 event("canonical_variant", row=int(index) + 1, column=rule.column, before=normalized, after=target)
     if request.normalize_dates and not review_only:
         excluded = [request.fields.name, request.fields.email, request.fields.phone, *request.fields.identifiers, *request.ignored_columns]
+        if request.normalize_countries:
+            excluded.extend(request.country_columns if request.country_columns is not None else country_columns(work.columns))
         for column in date_columns(work, normalize, excluded=excluded):
             if pd.api.types.is_datetime64_any_dtype(work[column]):
                 work[column] = work[column].astype(object)
@@ -241,6 +254,24 @@ def plan_cleanup(frame: pd.DataFrame, request: AutoCleanupRequest, *, transform:
                           options={"date_order": request.date_order, "output": "ISO 8601"})
     if date_issues:
         warnings.append(f"Se conservaron {len(date_issues)} fechas ambiguas, inválidas o no reconocidas. Revisa el orden día/mes si corresponde.")
+    if request.normalize_countries and not review_only:
+        selected = request.country_columns if request.country_columns is not None else country_columns(work.columns)
+        protected = {request.fields.name, request.fields.email, request.fields.phone, *request.fields.identifiers, *request.ignored_columns}
+        for column in dict.fromkeys(selected):
+            if column in protected:
+                continue
+            for index, value in work[column].items():
+                canonical, reason, iso2 = normalize_country(value, request.country_format)
+                if reason:
+                    counts["countries_skipped"] += 1
+                    country_issues.append({"row": int(index) + 1, "column": column, "value": safe(value), "reason": reason})
+                elif iso2 and canonical != value:
+                    work.at[index, column] = canonical
+                    counts["countries_normalized"] += 1
+                    event("normalize_country", row=int(index) + 1, column=column, before=value, after=canonical,
+                          country_code=iso2, output_format=request.country_format, source="ISO 3166-1 / pycountry")
+    if country_issues:
+        warnings.append(f"Se conservaron {len(country_issues)} valores de país ambiguos o no reconocidos; no se adivinaron equivalencias.")
     if not review_only:
         deduplicate("exact_duplicate_after_standardization")
 
@@ -374,4 +405,5 @@ def plan_cleanup(frame: pd.DataFrame, request: AutoCleanupRequest, *, transform:
     counts["pending_groups"] = len(pending_groups)
     counts["duplicates_removed"] = counts["exact_duplicates_removed"] + counts["clients_merged"]
     return work, {"counts": counts, "warnings": warnings, "fields": fields.model_dump(),
-                  "events": events, "pending_groups": pending_groups, "date_issues": date_issues}
+                  "events": events, "pending_groups": pending_groups, "date_issues": date_issues,
+                  "country_issues": country_issues}

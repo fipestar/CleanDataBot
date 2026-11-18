@@ -244,3 +244,52 @@ El contrato de configuración añade `all_columns` (predeterminado `true`), `nor
 Verificación: ejecutar `python -m unittest discover -v` desde backend y `npm run build` desde frontend. `backend/test_dates.py` cubre formatos, ambigüedad, fechas inválidas, horas y zonas, fechas de Excel, identificadores, limpieza global, repetición, originales intactos y contrato HTTP.
 
 Verificación de esta actualización: **71 pruebas aprobadas** (`unittest`, 0,806 s en la última ejecución) y build TypeScript/Vite correcto. En el navegador se comprobó el botón directo, cero elementos «Grupos pendientes», cuatro fechas normalizadas en modo automático y la conversión de la fecha ambigua al elegir día/mes. Se abrió el CSV descargado y se verificaron hora/zona, fecha inválida preservada y código sin convertir. La consola del navegador no registró errores ni avisos durante el recorrido. [Captura del resultado](docs/global-cleanup-dates.jpg).
+
+## Normalización automática de países
+
+Está activada por defecto dentro de **Limpiar automáticamente todas las columnas**. No consulta una API de países durante el procesamiento ni envía registros de clientes al exterior: usa el catálogo local ISO 3166-1 de [pycountry](https://github.com/pycountry/pycountry), sus traducciones al español y una lista explícita de abreviaturas conocidas.
+
+Se detectan encabezados como `country`, `country_name`, `country_code`, `país`, `pais_residencia`, `billing_country` o `shipping_country`. En **Opciones de fechas, asociaciones y valores canónicos → Países** se pueden seleccionar otras columnas, desactivar la regla o elegir la salida:
+
+- **Nombre en español** (predeterminado): `US`, `usa`, `u.s.` y `United States` → `Estados Unidos`.
+- **Nombre en inglés:** esas variantes → `United States`.
+- **ISO de dos letras:** → `US`; `UK` y `United Kingdom` → `GB`.
+- **ISO de tres letras:** → `USA`, `GBR`, etc.
+
+Se reconocen nombres actuales del catálogo en español e inglés, códigos ISO alpha-2/alpha-3, códigos numéricos ISO de tres dígitos cuando se reciben como texto y alias controlados como `UK`, `EE.UU.` o `U.S.A.`. Las mayúsculas, tildes, puntos y espacios se normalizan para la búsqueda. No se aplica esta conversión a nombres, ciudades ni otras columnas por el simple hecho de que su contenido coincida con un código de país.
+
+No se utiliza búsqueda difusa ni búsqueda de subdivisiones. Un error como `Germnay`, un valor regional como `Latam`, nombres incompletos como `Corea` o ambiguos como `Congo` se conservan y se explican en **Países conservados sin reconocer**. Para Congo hay que indicar explícitamente la república correspondiente o sus códigos `CG`/`CD`. Las subdivisiones como `England` no se convierten silenciosamente en un país distinto. Se pueden añadir equivalencias justificadas mediante las reglas por columna existentes. Los valores numéricos reales no se reinterpretan como códigos; tampoco se rellenan países vacíos.
+
+La regla se ejecuta después de los reemplazos explícitos y antes de la comprobación de duplicados tras estandarizar. Puede resolver diferencias de país entre registros, pero la eliminación de clientes sigue necesitando las reglas conservadoras de contacto/nombre/identificadores existentes. Las columnas asociadas a identidad, contactos o datos técnicos no pueden seleccionarse para conversión de país. Una columna seleccionada como país queda excluida de la detección automática de fechas.
+
+El resultado incluye los contadores reales `countries_normalized` (celdas cambiadas) y `countries_skipped` (valores no vacíos no reconocidos o ambiguos), los detalles `country_issues` y eventos `normalize_country` con antes/después, columna, registro original, código ISO reconocido, formato de salida y fuente del catálogo. Los vacíos no cuentan como errores. Repetir sobre valores ya normalizados no vuelve a modificar las celdas.
+
+El contrato de `AutoCleanupRequest` añade:
+
+```json
+{
+  "normalize_countries": true,
+  "country_format": "es",
+  "country_columns": null
+}
+```
+
+`country_format` acepta `es`, `en`, `iso2` o `iso3`; `country_columns=null` detecta columnas por encabezado y `[]` no selecciona ninguna. El endpoint de configuración devuelve la selección sugerida para que React la muestre y permita editarla.
+
+Instalar o actualizar dependencias desde `backend` con `./.venv/Scripts/python.exe -m pip install -r requirements-dev.txt`. El catálogo se actualiza al actualizar la dependencia, no mediante llamadas de red en cada limpieza. Es una referencia de códigos y nombres; no verifica nacionalidad, residencia, soberanía ni la identidad de una persona. Las denominaciones siguen la versión instalada del catálogo salvo alias y nombres desambiguados documentados en `country_normalization.py`.
+
+### Verificación con el CSV suministrado
+
+Se leyó `dirty-customers_corregido.csv` sin modificarlo y se ejecutó la limpieza real sobre una copia de trabajo. Sus 999 filas contenían 14 representaciones de país y quedaron 999 filas, 999 celdas de país normalizadas y cero países sin reconocer:
+
+| País canónico | Filas |
+|---|---:|
+| Estados Unidos | 294 |
+| Reino Unido | 206 |
+| Alemania | 202 |
+| Brasil | 154 |
+| Francia | 143 |
+
+La segunda ejecución produjo cero celdas modificadas y cero filas eliminadas. Se comprobó la igualdad del DataFrame original y de los bytes del CSV fuente antes/después. El CSV del usuario no se incorpora al repositorio ni a las pruebas; las pruebas reproducen solamente sus variantes de país.
+
+Verificación de esta entrega: **84 pruebas aprobadas**, incluyendo las 71 existentes y 13 nuevas de países; build TypeScript/Vite correcto. Las nuevas pruebas comprueban nombres, alias, códigos y traducciones, todas las salidas canónicas del catálogo como entradas idempotentes, ambigüedad, columnas explícitas, originales intactos, repetición, combinación con fechas/duplicados y contrato HTTP. Ejecutar `python -m unittest discover -v` desde backend y `npm run build` desde frontend.

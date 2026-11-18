@@ -17,6 +17,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from auto_cleanup import (AutoApproval, AutoCleanupRequest, ColumnRule, ExceptionDecision,
                           infer_mapping, plan_cleanup, record_hash)
+from country_normalization import country_columns
 
 try:
     from rapidfuzz import fuzz
@@ -504,7 +505,11 @@ def auto_cleanup_config(analysis_id: str) -> dict[str, Any]:
             ]).model_dump()
         return {"config": {**configured, "revision": state["revision"], "all_columns": True,
                            "normalize_dates": configured.get("normalize_dates", True),
-                           "date_order": configured.get("date_order", "auto")}, "warnings": warnings}
+                           "date_order": configured.get("date_order", "auto"),
+                           "normalize_countries": configured.get("normalize_countries", True),
+                           "country_format": configured.get("country_format", "es"),
+                           "country_columns": (configured.get("country_columns") if configured.get("country_columns") is not None
+                                               else country_columns(state["frame"].columns))}, "warnings": warnings}
 
 
 def check_revision(state, revision):

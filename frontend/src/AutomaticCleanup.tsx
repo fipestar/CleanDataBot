@@ -3,7 +3,7 @@ import { ApplyResult, ModuleProps, get, post, valueText } from './api'
 import type { AutoConfig, AutoEvent, AutoPlan, AutoReport, ColumnRule } from './autoTypes'
 
 const ruleLabels: Record<string, string> = {
-  normalize_date: 'Normalizar fecha a ISO', normalize_text: 'Normalizar espacios', canonical_variant: 'Variante a canónico',
+  normalize_country: 'Normalizar país con catálogo ISO', normalize_date: 'Normalizar fecha a ISO', normalize_text: 'Normalizar espacios', canonical_variant: 'Variante a canónico',
   exact_duplicate_before: 'Duplicado exacto inicial',
   exact_duplicate_after_standardization: 'Duplicado exacto tras estandarizar',
   exact_duplicate_after_merge: 'Duplicado exacto tras completar campos',
@@ -66,7 +66,7 @@ export default function AutomaticCleanup({ analysis, run, applied }: ModuleProps
   return <section className="match-panel automatic-panel" aria-labelledby="automatic-heading">
     <div className="step-label">LIMPIEZA AUTOMÁTICA</div>
     <h3 id="automatic-heading">Limpiar todas las columnas automáticamente</h3>
-    <p className="section-copy">Se limpian espacios en todas las columnas de texto, se aplican los canónicos configurados y se normalizan las fechas reconocibles. Se eliminan duplicados exactos y solo se fusionan clientes con evidencia suficiente. Los casos dudosos se conservan sin solicitar revisión por grupos. El original permanece intacto.</p>
+    <p className="section-copy">Se limpian espacios en todas las columnas de texto, se aplican los canónicos configurados y se normalizan fechas y países reconocibles. Se eliminan duplicados exactos y solo se fusionan clientes con evidencia suficiente. Los casos dudosos se conservan sin solicitar revisión por grupos. El original permanece intacto.</p>
     {loadError && <div className="alert alert-error" role="alert">{loadError} <button className="text-button" onClick={() => setRetry((current) => current + 1)}>Reintentar cargar configuración</button></div>}
     {!config && !loadError && <p role="status">Cargando asociaciones de columnas…</p>}
     {config && <form onSubmit={(event) => { event.preventDefault(); generatePreview() }}>
@@ -94,6 +94,15 @@ export default function AutomaticCleanup({ analysis, run, applied }: ModuleProps
         <details><summary>Columnas técnicas que pueden diferir sin bloquear (opcional)</summary><p className="section-copy">Solo para datos que sabes que no identifican al cliente, por ejemplo un número interno de fila. Se conserva su valor en el primer registro. No permite ignorar campos asociados a nombre, contacto o identificadores.</p>
           <div className="cleanup-columns">{analysis.columns.map((column) => <label key={column}><input type="checkbox" checked={config.ignored_columns.includes(column)} disabled={mapped.includes(column)} onChange={(event) => changeConfig({ ignored_columns: event.target.checked ? [...config.ignored_columns, column] : config.ignored_columns.filter((name) => name !== column) })} />{column}</label>)}</div>
         </details>
+        <h4>Países</h4>
+        <label><input type="checkbox" checked={config.normalize_countries} onChange={(event) => changeConfig({ normalize_countries: event.target.checked })} /> Normalizar países automáticamente</label>
+        <label className="control-group"><span>Formato de países</span><select value={config.country_format} onChange={(event) => changeConfig({ country_format: event.target.value as AutoConfig['country_format'] })}>
+          <option value="es">Nombre en español</option><option value="en">Nombre en inglés</option><option value="iso2">Código ISO de 2 letras (US, GB, CO)</option><option value="iso3">Código ISO de 3 letras (USA, GBR, COL)</option>
+        </select></label>
+        <fieldset className="cleanup-options"><legend>Columnas de país</legend><div className="cleanup-columns">{analysis.columns.map((column) => <label key={column}>
+          <input type="checkbox" checked={(config.country_columns ?? []).includes(column)} disabled={mapped.includes(column) || config.ignored_columns.includes(column)} onChange={(event) => changeConfig({ country_columns: event.target.checked ? [...(config.country_columns ?? []), column] : (config.country_columns ?? []).filter((name) => name !== column) })} />{column}
+        </label>)}</div></fieldset>
+        <p className="section-copy">Se detectan encabezados como country o país; puedes asociar otra columna. Reconoce nombres en español e inglés, códigos ISO y abreviaturas como U.S., USA y UK. Usa un catálogo local y no envía los datos a una API. Los nombres desconocidos o ambiguos se conservan sin adivinar.</p>
         <h4>Fechas</h4>
         <label><input type="checkbox" checked={config.normalize_dates} onChange={(event) => changeConfig({ normalize_dates: event.target.checked })} /> Normalizar fechas reconocibles a ISO 8601</label>
         <label className="control-group"><span>Orden de fechas con el año al final</span><select value={config.date_order} onChange={(event) => changeConfig({ date_order: event.target.value as AutoConfig['date_order'] })}>
@@ -143,10 +152,12 @@ function AutoSummary({ report }: { report: AutoPlan | AutoReport }) {
       ['Duplicados eliminados', counts.duplicates_removed], ['Fechas normalizadas', counts.dates_normalized ?? 0],
       ['Campos vacíos completados', counts.filled_cells], ['Exactos eliminados', counts.exact_duplicates_removed],
       ['Clientes fusionados', counts.clients_merged], ['Fechas conservadas sin interpretar', counts.dates_skipped ?? 0],
+      ['Países normalizados', counts.countries_normalized ?? 0], ['Países conservados sin reconocer', counts.countries_skipped ?? 0],
     ].map(([label, count]) => <article className="metric-card" key={String(label)}><div className="metric-top">{label}</div><strong>{Number(count).toLocaleString('es-CO')}</strong></article>)}</div>
     <p className="section-copy">Los contadores describen pasos de esta ejecución; una celda puede normalizarse y luego estandarizarse. No se suman al contador neto de celdas del dataset. Puedes descargar el resultado acumulado desde la acción principal.</p>
     {report.warnings.map((warning) => <p role="status" className="alert" key={warning}>{warning}</p>)}
     {!!report.date_issues?.length && <details><summary>Fechas conservadas sin interpretar</summary><ul>{report.date_issues.map((issue) => <li key={`${issue.column}:${issue.row}`}>Registro {issue.row}, {issue.column}: {valueText(issue.value)}. {issue.reason}</li>)}</ul></details>}
+    {!!report.country_issues?.length && <details><summary>Países conservados sin reconocer</summary><ul>{report.country_issues.map((issue) => <li key={`${issue.column}:${issue.row}`}>Registro {issue.row}, {issue.column}: {valueText(issue.value)}. {issue.reason}</li>)}</ul></details>}
   </>
 }
 
